@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Leave by — Traffic-aware arrival planner</title>
+    <meta name="description" content="Calculate when to leave so you arrive on time with TomTom traffic-aware routing." />
+    <meta property="og:title" content="Leave by — Traffic-aware arrival planner" />
+    <meta property="og:description" content="Calculate when to leave so you arrive on time with TomTom traffic-aware routing." />
+    <meta property="og:image" content="__SITE_ORIGIN__/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Leave by — Traffic-aware arrival planner" />
+    <meta name="twitter:description" content="Calculate when to leave so you arrive on time with TomTom traffic-aware routing." />
+    <meta name="twitter:image" content="__SITE_ORIGIN__/og.png" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="site-shell">
+      <header class="topbar">
+        <a class="brand" href="#top" aria-label="Leave by home">
+          <span class="brand-mark" aria-hidden="true">LB</span><span>Leave by</span>
+        </a>
+        <span class="live-pill"><span aria-hidden="true"></span> Traffic-aware routing</span>
+      </header>
+
+      <section class="hero" id="top">
+        <div class="hero-copy">
+          <p class="eyebrow">TomTom route planner</p>
+          <h1>Know when to leave.<br />Arrive right on time.</h1>
+          <p class="intro">Enter where you’re going and when you need to be there. We’ll work backward through expected traffic and give you a leave-by time.</p>
+        </div>
+
+        <div class="planner-card">
+          <form id="route-form">
+            <div class="route-fields">
+              <label>
+                <span class="field-label"><span class="route-dot start-dot" aria-hidden="true"></span>Start location</span>
+                <input id="start" type="text" placeholder="123 Main St, Los Gatos" autocomplete="street-address" required />
+              </label>
+              <div class="route-connector" aria-hidden="true"></div>
+              <label>
+                <span class="field-label"><span class="route-dot end-dot" aria-hidden="true"></span>Destination</span>
+                <input id="end" type="text" placeholder="School, office, or address" autocomplete="off" required />
+              </label>
+            </div>
+            <label class="arrival-field">
+              <span class="field-label">Arrive by</span>
+              <input id="arrive-at" type="datetime-local" required />
+            </label>
+            <button id="submit-button" type="submit">Calculate leave time <span aria-hidden="true">→</span></button>
+          </form>
+          <div class="trust-row"><span>Live + historical traffic</span><span>Fastest driving route</span><span>Powered by TomTom</span></div>
+        </div>
+      </section>
+
+      <section class="result-zone" id="result-zone" aria-live="polite">
+        <div class="result-placeholder" id="placeholder">
+          <span class="placeholder-icon" aria-hidden="true">↗</span>
+          <div><p>Your leave-by time will appear here</p><span>Plan tomorrow morning, school pickup, or your next meeting.</span></div>
+        </div>
+        <div class="error-card" id="error-card" role="alert" hidden>
+          <strong>Route not found</strong><span id="error-message"></span>
+        </div>
+        <article class="result-card" id="result-card" hidden>
+          <div class="result-summary">
+            <p class="eyebrow">Your leave-by time</p>
+            <p class="leave-time" id="leave-time"></p>
+            <p class="leave-date" id="leave-date"></p>
+          </div>
+          <div class="trip-details">
+            <div class="detail-route"><span class="route-dot start-dot" aria-hidden="true"></span><div><small>From</small><p id="start-label"></p></div></div>
+            <div class="detail-line" aria-hidden="true"></div>
+            <div class="detail-route"><span class="route-dot end-dot" aria-hidden="true"></span><div><small>To</small><p id="end-label"></p></div></div>
+            <div class="metrics">
+              <div><small>Drive time</small><strong id="drive-time"></strong></div>
+              <div><small>Distance</small><strong id="distance"></strong></div>
+              <div><small>Traffic delay</small><strong id="traffic-delay"></strong></div>
+              <div><small>Arrive</small><strong id="arrival-time"></strong></div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <footer><span>Leave by</span><span>Traffic estimates can change. Leave a little buffer for important trips.</span></footer>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
