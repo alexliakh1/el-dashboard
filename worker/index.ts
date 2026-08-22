@@ -22,8 +22,63 @@ interface ExecutionContext {
 
 type GeocodeResult = {
   address?: { freeformAddress?: string };
+  id?: string;
+  poi?: { name?: string };
   position?: { lat?: number; lon?: number };
 };
+
+async function handleSearchRequest(url: URL, env: Env) {
+  if (!env.TOMTOM_API_KEY) {
+    return Response.json(
+      { error: "TomTom search is not configured yet." },
+      { status: 503 },
+    );
+  }
+
+  const query = (url.searchParams.get("q") || "").trim();
+  if (query.length < 3) {
+    return Response.json({ suggestions: [] });
+  }
+  if (query.length > 160) {
+    return Response.json({ error: "Search is too long." }, { status: 400 });
+  }
+
+  const searchUrl = new URL(
+    `https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json`,
+  );
+  searchUrl.searchParams.set("key", env.TOMTOM_API_KEY);
+  searchUrl.searchParams.set("limit", "5");
+  searchUrl.searchParams.set("typeahead", "true");
+  searchUrl.searchParams.set("language", "en-US");
+  searchUrl.searchParams.set("countrySet", "US");
+
+  try {
+    const response = await fetch(searchUrl);
+    const data = (await response.json()) as { results?: GeocodeResult[] };
+    if (!response.ok) {
+      return Response.json({ error: "Address search failed." }, { status: 502 });
+    }
+
+    const suggestions = (data.results || [])
+      .filter(function (result) {
+        return Boolean(result.address?.freeformAddress);
+      })
+      .map(function (result, index) {
+        const address = result.address?.freeformAddress || "";
+        const name = result.poi?.name || "";
+        return {
+          id: result.id || `${index}-${address}`,
+          label: name || address,
+          secondary: name ? address : "",
+          value: name ? `${name}, ${address}` : address,
+        };
+      });
+
+    return Response.json({ suggestions });
+  } catch {
+    return Response.json({ error: "Address search failed." }, { status: 502 });
+  }
+}
 
 async function geocodeLocation(query: string, apiKey: string) {
   const geocodeUrl = new URL(
@@ -148,6 +203,16 @@ async function handleRouteRequest(request: Request, env: Env) {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/search") {
+      if (request.method !== "GET") {
+        return new Response("Method not allowed", {
+          status: 405,
+          headers: { Allow: "GET" },
+        });
+      }
+      return handleSearchRequest(url, env);
+    }
 
     if (url.pathname === "/api/route") {
       if (request.method !== "POST") {

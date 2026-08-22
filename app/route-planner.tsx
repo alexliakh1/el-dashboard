@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useId, useMemo, useState } from "react";
+
+type AddressSuggestion = {
+  id: string;
+  label: string;
+  secondary: string;
+  value: string;
+};
 
 type RouteResult = {
   arrivalTime: string;
@@ -30,6 +37,167 @@ function formatDate(value: string) {
     month: "short",
     day: "numeric",
   }).format(new Date(value));
+}
+
+type AddressFieldProps = {
+  dotClass: "start-dot" | "end-dot";
+  label: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  value: string;
+};
+
+function AddressField({ dotClass, label, onChange, placeholder, value }: AddressFieldProps) {
+  let inputId = useId();
+  let listId = `${inputId}-suggestions`;
+  let [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
+  let [isSearching, setIsSearching] = useState(false);
+  let [isOpen, setIsOpen] = useState(false);
+  let [activeIndex, setActiveIndex] = useState(-1);
+
+  useEffect(
+    function () {
+      let query = value.trim();
+      if (query.length < 3) {
+        setSuggestions([]);
+        setIsOpen(false);
+        setIsSearching(false);
+        return;
+      }
+
+      let controller = new AbortController();
+      let timer = window.setTimeout(function () {
+        setIsSearching(true);
+        fetch(`/api/search?q=${encodeURIComponent(query)}`, {
+          signal: controller.signal,
+        })
+          .then(function (response) {
+            if (!response.ok) {
+              throw new Error("Address search failed");
+            }
+            return response.json();
+          })
+          .then(function (data) {
+            setSuggestions(data.suggestions || []);
+            setActiveIndex(-1);
+            setIsOpen(true);
+          })
+          .catch(function (error) {
+            if (error.name !== "AbortError") {
+              setSuggestions([]);
+              setIsOpen(false);
+            }
+          })
+          .finally(function () {
+            setIsSearching(false);
+          });
+      }, 250);
+
+      return function () {
+        window.clearTimeout(timer);
+        controller.abort();
+      };
+    },
+    [value],
+  );
+
+  function chooseSuggestion(suggestion: AddressSuggestion) {
+    onChange(suggestion.value);
+    setSuggestions([]);
+    setIsOpen(false);
+    setActiveIndex(-1);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (!isOpen || suggestions.length === 0) {
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveIndex(function (current) {
+        return current >= suggestions.length - 1 ? 0 : current + 1;
+      });
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveIndex(function (current) {
+        return current <= 0 ? suggestions.length - 1 : current - 1;
+      });
+    } else if (event.key === "Enter" && activeIndex >= 0) {
+      event.preventDefault();
+      chooseSuggestion(suggestions[activeIndex]);
+    } else if (event.key === "Escape") {
+      setIsOpen(false);
+      setActiveIndex(-1);
+    }
+  }
+
+  return (
+    <div className="address-field">
+      <label className="field-label" htmlFor={inputId}>
+        <span className={`route-dot ${dotClass}`} aria-hidden="true" />
+        {label}
+      </label>
+      <div className="autocomplete-shell">
+        <input
+          id={inputId}
+          type="text"
+          value={value}
+          onChange={function (event) {
+            onChange(event.target.value);
+          }}
+          onFocus={function () {
+            if (suggestions.length > 0) {
+              setIsOpen(true);
+            }
+          }}
+          onBlur={function () {
+            window.setTimeout(function () {
+              setIsOpen(false);
+              setActiveIndex(-1);
+            }, 120);
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          autoComplete="off"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-controls={listId}
+          aria-expanded={isOpen}
+          aria-activedescendant={activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
+          required
+        />
+        {isSearching && <span className="searching-indicator">Searching…</span>}
+        {isOpen && suggestions.length > 0 && (
+          <ul className="suggestions" id={listId} role="listbox">
+            {suggestions.map(function (suggestion, index) {
+              return (
+                <li
+                  id={`${listId}-${index}`}
+                  key={suggestion.id}
+                  role="option"
+                  aria-selected={index === activeIndex}
+                  className={index === activeIndex ? "is-active" : ""}
+                  onMouseDown={function (event) {
+                    event.preventDefault();
+                    chooseSuggestion(suggestion);
+                  }}
+                >
+                  <span className="suggestion-pin" aria-hidden="true" />
+                  <span>
+                    <strong>{suggestion.label}</strong>
+                    {suggestion.secondary && <small>{suggestion.secondary}</small>}
+                  </span>
+                </li>
+              );
+            })}
+            <li className="suggestions-credit" aria-hidden="true">
+              Powered by TomTom
+            </li>
+          </ul>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function RoutePlanner() {
@@ -105,37 +273,23 @@ export default function RoutePlanner() {
         <div className="planner-card">
           <form onSubmit={calculateRoute}>
             <div className="route-fields">
-              <label>
-                <span className="field-label">
-                  <span className="route-dot start-dot" aria-hidden="true" />
-                  Start location
-                </span>
-                <input
-                  type="text"
-                  value={start}
-                  onChange={function (event) { setStart(event.target.value); }}
-                  placeholder="123 Main St, Los Gatos"
-                  autoComplete="street-address"
-                  required
-                />
-              </label>
+              <AddressField
+                dotClass="start-dot"
+                label="Start location"
+                value={start}
+                onChange={setStart}
+                placeholder="123 Main St, Los Gatos"
+              />
 
               <div className="route-connector" aria-hidden="true" />
 
-              <label>
-                <span className="field-label">
-                  <span className="route-dot end-dot" aria-hidden="true" />
-                  Destination
-                </span>
-                <input
-                  type="text"
-                  value={end}
-                  onChange={function (event) { setEnd(event.target.value); }}
-                  placeholder="School, office, or address"
-                  autoComplete="off"
-                  required
-                />
-              </label>
+              <AddressField
+                dotClass="end-dot"
+                label="Destination"
+                value={end}
+                onChange={setEnd}
+                placeholder="School, office, or address"
+              />
             </div>
 
             <label className="arrival-field">
