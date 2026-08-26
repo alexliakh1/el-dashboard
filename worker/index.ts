@@ -4,7 +4,6 @@ import handler from "vinext/server/app-router-entry";
 
 interface Env {
   ASSETS: Fetcher;
-  DB: D1Database;
   TOMTOM_API_KEY: string;
   IMAGES: {
     input(stream: ReadableStream): {
@@ -203,6 +202,7 @@ async function handleRouteRequest(request: Request, env: Env) {
     routeUrl.searchParams.set("travelMode", "car");
     routeUrl.searchParams.set("routeType", "fastest");
     routeUrl.searchParams.set("routeRepresentation", "summaryOnly");
+    routeUrl.searchParams.set("computeTravelTimeFor", "all");
     routeUrl.searchParams.set("arriveAt", arrivalDate.toISOString());
 
     const response = await fetch(routeUrl);
@@ -212,7 +212,10 @@ async function handleRouteRequest(request: Request, env: Env) {
         summary?: {
           arrivalTime?: string;
           departureTime?: string;
+          historicTrafficTravelTimeInSeconds?: number;
           lengthInMeters?: number;
+          liveTrafficIncidentsTravelTimeInSeconds?: number;
+          noTrafficTravelTimeInSeconds?: number;
           trafficDelayInSeconds?: number;
           travelTimeInSeconds?: number;
         };
@@ -224,14 +227,22 @@ async function handleRouteRequest(request: Request, env: Env) {
       throw new Error(data.detailedError?.message || "No driving route was found.");
     }
 
+    const travelTimeInSeconds = summary.travelTimeInSeconds || 0;
+    const noTrafficTravelTimeInSeconds =
+      summary.noTrafficTravelTimeInSeconds || travelTimeInSeconds;
+    const expectedTrafficDelayInSeconds = Math.max(
+      summary.trafficDelayInSeconds || 0,
+      travelTimeInSeconds - noTrafficTravelTimeInSeconds,
+    );
+
     return Response.json({
       arrivalTime: summary.arrivalTime,
       departureTime: summary.departureTime,
       distanceMeters: summary.lengthInMeters || 0,
       endLabel: destination.label,
       startLabel: origin.label,
-      trafficDelayInSeconds: summary.trafficDelayInSeconds || 0,
-      travelTimeInSeconds: summary.travelTimeInSeconds || 0,
+      trafficDelayInSeconds: expectedTrafficDelayInSeconds,
+      travelTimeInSeconds,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "No route was found.";

@@ -39,6 +39,13 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function formatTrafficDelay(seconds: number) {
+  if (seconds > 0 && seconds < 60) {
+    return "<1 min";
+  }
+  return `${Math.round(seconds / 60)} min`;
+}
+
 type AddressFieldProps = {
   dotClass: "start-dot" | "end-dot";
   label: string;
@@ -355,7 +362,7 @@ export default function RoutePlanner() {
               <div className="metrics">
                 <div><small>Drive time</small><strong>{Math.round(result.travelTimeInSeconds / 60)} min</strong></div>
                 <div><small>Distance</small><strong>{(result.distanceMeters / 1609.344).toFixed(1)} mi</strong></div>
-                <div><small>Traffic delay</small><strong>{Math.round(result.trafficDelayInSeconds / 60)} min</strong></div>
+                <div><small>Expected traffic</small><strong>{formatTrafficDelay(result.trafficDelayInSeconds)}</strong></div>
                 <div><small>Arrive</small><strong>{formatTime(result.arrivalTime)}</strong></div>
               </div>
             </div>
