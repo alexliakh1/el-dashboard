@@ -79,3 +79,17 @@ test('API separates admin/display access and validates method/body',async()=>{
   assert.equal((await handleApi(new Request('https://commute.test/api/settings',{method:'PUT',headers:{Authorization:'Bearer admin','Content-Type':'application/json'},body:'null'}),env)).status,400);
   assert.equal((await handleApi(new Request('https://commute.test/api/display',{method:'POST',headers:{Authorization:'Bearer display'}}),env)).status,405);
 });
+
+test('quick display returns saved results without provider access and excludes another route',async()=>{
+  const database=db(),storage=new Storage(database);
+  const future={...s,arriveBy:new Date(Date.now()+86400000).toISOString()};
+  await storage.set('settings',future);
+  await storage.set('snapshot',{settingsKey:settingsKey(future),current:series[0],predictions:series,updatedAt:point(0,1).departure,predictionsAt:point(0,1).departure});
+  const request=()=>new Request('https://commute.test/api/display?cached=1',{headers:{Authorization:'Bearer display'}});
+  const env={DB:database,DISPLAY_TOKEN:'display'}; // No provider key: this path must only read saved data.
+  const saved=await (await handleApi(request(),env)).json();
+  assert.equal(saved.status,'cached');assert.ok(saved.recommendation);
+  await storage.set('settings',{...future,destination:'Different destination'});
+  const changed=await (await handleApi(request(),env)).json();
+  assert.equal(changed.status,'loading');assert.equal(changed.recommendation,undefined);
+});

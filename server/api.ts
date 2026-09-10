@@ -1,9 +1,10 @@
 import { Storage, type Database } from './storage.ts';
-import { defaults, validateSettings } from './settings.ts';
+import { defaults, validateSettings, settingsKey } from './settings.ts';
+import { serializeDisplay } from './display.ts';
 import { commute } from './service.ts';
 import { TomTom, ProviderError } from './tomtom.ts';
 import { handleSearchRequest } from './search.ts';
-import type { Settings } from '../shared/types.ts';
+import type { Settings, Snapshot } from '../shared/types.ts';
 export type ApiEnv={DB?:Database;TOMTOM_API_KEY?:string;ADMIN_TOKEN?:string;DISPLAY_TOKEN?:string};
 const json=(body:unknown,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 export async function handleApi(request:Request,env:ApiEnv):Promise<Response> {
@@ -56,6 +57,12 @@ export async function handleApi(request:Request,env:ApiEnv):Promise<Response> {
       }
     }
     const s=await storage.get<Settings>('settings')||defaults();
+    if(display && u.searchParams.get('cached')==='1') {
+      const snapshot=await storage.get<Snapshot>('snapshot');
+      const old=snapshot?.settingsKey===settingsKey(s)?snapshot:null;
+      const status=!s.origin||!s.destination||!s.arriveBy?'missing_configuration':Date.parse(s.arriveBy)<=Date.now()?'no_route':old?'cached':'loading';
+      return json(serializeDisplay(s,old,Date.now(),status,old?'Showing saved traffic while checking for updates.':undefined));
+    }
     return json(await commute(s,storage,provider,Date.now(),request.method==='POST'));
   } catch(e) { return json({error:e instanceof ProviderError?e.message:'Commute service is unavailable. Please try again.'},503); }
 }

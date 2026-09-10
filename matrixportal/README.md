@@ -35,8 +35,8 @@ Regulated 5V supply → both panels' 5V / GND power connectors
    from [CircuitPython.org](https://circuitpython.org/board/adafruit_matrixportal_s3/).
    Use the S3 build, not the MatrixPortal M4 build. Connect using a USB data cable.
 2. Copy these files to the root of **CIRCUITPY**:
-   `code.py`, `layout.py`, `network.py`, `protocol.py`, and the complete `fonts/`
-   folder (including `__init__.py` and `tiny.py`). Keep `lib/` available.
+   `code.py`, `layout.py`, `network.py`, `protocol.py`, `clock_sync.py`, `certs/`, and the complete `fonts/`
+   folder (including `__init__.py`, `board.py`, and `tiny.py`). Keep `lib/` available.
 3. Copy `settings.toml.example` as **settings.toml** on the device, then set your
    Wi-Fi credentials, HTTPS `/api/display` URL, and separate read-only display token.
    Never copy the TomTom key. Never commit settings.toml.
@@ -49,9 +49,9 @@ Regulated 5V supply → both panels' 5V / GND power connectors
 No downloaded font or third-party CircuitPython bundle is required: the firmware
 uses built-in `displayio`, `rgbmatrix`, `framebufferio`, `wifi`, `socketpool`, `ssl`,
 `rtc`, `digitalio`, `board`, `json`, `time`, `os`, `gc`, and `math`.
-`fonts/tiny.py` is an original bundled CC0 3×5 alphabet. Primary time is rendered at
-3× scale (9×15 glyphs, 12-pixel advance). The longest time, `12:59`, occupies exactly
-57×15 pixels. No desktop TrueType font is loaded onto the device.
+`fonts/board.py` is an original bundled CC0 mixed-case 5×7 alphabet for crisp
+primary labels and times. `fonts/tiny.py` supplies 3×5 secondary labels. The longest
+time, `12:59`, occupies 29×7 pixels, with AM/PM alongside. No desktop font is needed.
 
 ## Panel configuration
 
@@ -68,8 +68,10 @@ with the `LEAVE BY` label and the right-hand drive-time field.
 
 ## Screens and controls
 
-- Main screen: 30 seconds. Departure time is largest; drive time at top right,
-  arrival below, age at bottom. White primary text, dim blue secondary labels.
+- Main screen: 30 seconds. Two departure-board rows: Leave by and Arrive, with
+  white mixed-case labels, outlined car/flag icons, and green right-aligned times.
+  Drive duration sits below the first row; schedule status below the second.
+  Cached/offline data replaces schedule status with an orange age warning.
 - Traffic message: 10 seconds. Green improving, yellow steady, orange worsening,
   with approximate change time.
 - Trend: 10 seconds. Sparse graph with a white mark at the departure sample.
@@ -80,12 +82,20 @@ with the `LEAVE BY` label and the right-hand drive-time field.
   the server's TomTom rate limits.
 
 The renderer uses two 128×32 bitmaps and a six-color palette. It draws to the hidden
-bitmap and swaps once, without clearing the visible screen. HUB75 scanout uses the
+bitmap and swaps once, without clearing the visible screen. Unchanged data, screen,
+state, and age skip the redraw. HUB75 scanout uses the
 RGB matrix driver's double buffer. Brightness scales RGB palette values because
 RGBMatrix's brightness property currently acts as on/off. At four-bit color depth,
 very low brightness loses some color precision; verify 25–35% visually.
 
 ## Networking, time, and recovery
+
+- `certs/gts-root-r4.pem` is Google's public GTS Root R4 certificate, downloaded
+  from https://pki.goog/repo/certs/gtsr4.pem. It enables verified HTTPS to this
+  Sites deployment on CircuitPython. Keep this folder on the device. For a different
+  server certificate issuer, supply its appropriate CA with `COMMUTE_CA_FILE`.
+- Cold starts synchronize UTC using `time.cloudflare.com` (UDP port 123) before
+  HTTPS. The RTC stays in UTC; the server supplies localized display labels.
 
 - The network reader yields between nonblocking send/read operations, allowing age
   updates and button handling while a response is pending. It bounds response data
@@ -100,11 +110,11 @@ very low brightness loses some color precision; verify 25–35% visually.
   responses cannot replace the last successful recommendation. If the server itself
   supplies cached data, its original age remains intact.
 - The server supplies UTC epoch, UTC offset, and formatted local time labels. The
-  RTC is set to local time from this response, including the server's current DST
-  offset. Age uses monotonic time, so RTC changes do not reset it. DISPLAY_TIMEZONE
+  RTC is set to UTC from this response. Age uses monotonic time, so RTC changes
+  do not reset it. DISPLAY_TIMEZONE
   is an informational device setting; set the authoritative zone in the dashboard.
-  After prolonged disconnection across a DST transition, local RTC time cannot be
-  corrected until reconnect; cached labels remain visibly stale.
+  After prolonged disconnection across a DST transition, cached local labels
+  remain visibly stale until reconnect.
 - States: Starting, Connecting to Wi-Fi, Loading commute, Normal, Cached/offline,
   No route, Missing configuration, and Server error. Recoverable failures retain a
   visible screen. After power loss the device starts again and reloads the server's

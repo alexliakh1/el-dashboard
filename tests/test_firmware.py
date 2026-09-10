@@ -2,7 +2,7 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'matrixportal'))
-from layout import render, text
+from layout import render, text, clock_label
 from protocol import validate
 from network import decode_response
 import json
@@ -27,10 +27,14 @@ class FirmwareTests(unittest.TestCase):
             for screen in range(3):
                 b=Bitmap();render(b,payload() if state in ('NORMAL','CACHED/OFFLINE') else None,screen,state,99999)
                 self.assertTrue(b.pixels)
-    def test_largest_time_is_57_by_15(self):
-        b=Bitmap();text(b,'12:59',2,9,scale=3,max_width=76)
-        self.assertEqual(max(x for x,y in b.pixels),58)
-        self.assertEqual(max(y for x,y in b.pixels),23)
+    def test_full_time_and_meridiem_fit_right_column(self):
+        b=Bitmap();clock_label(b,'12:59 PM',2,3)
+        time_pixels=[(x,y) for (x,y),color in b.pixels.items() if color==3]
+        self.assertGreaterEqual(min(x for x,y in time_pixels),81)
+        self.assertEqual(max(x for x,y in time_pixels),109)
+        self.assertEqual(max(y for x,y in time_pixels),8)
+        self.assertTrue(any(x>=114 for x,y in b.pixels))
+        self.assertLessEqual(max(x for x,y in b.pixels),120)
     def test_long_labels_bounded(self):
         b=Bitmap();text(b,'VERY LONG DESTINATION '*20,80,22,max_width=48)
         self.assertLess(max(x for x,y in b.pixels),128)

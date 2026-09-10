@@ -1,8 +1,42 @@
 """Pure pixel renderer, shared by hardware and desktop layout tests."""
 from fonts.tiny import GLYPHS
+from fonts.board import GLYPHS as BOARD_GLYPHS
 WIDTH = 128
 HEIGHT = 32
 BLACK, WHITE, DIM, GREEN, YELLOW, ORANGE = range(6)
+
+def board_text(b, value, x, y, color=WHITE, max_width=128):
+    """Native 5x7 strokes; never enlarge the tiny font for primary labels."""
+    count=max(0,(min(max_width,WIDTH-x)+1)//6)
+    value=str(value)
+    if len(value)>count:value=value[:max(0,count-1)]+'.' if count else ''
+    for char in value:
+        for row,bits in enumerate(BOARD_GLYPHS.get(char,BOARD_GLYPHS['?'])):
+            for col in range(5):
+                if bits & (16>>col) and 0<=x+col<WIDTH and 0<=y+row<HEIGHT:
+                    b[x+col,y+row]=color
+        x+=6
+
+def badge(b,y,color,arrival=False):
+    # Sparse outlined icons keep power draw low, with no flashing indicators.
+    if arrival:
+        line(b,3,y,3,y+10,color)
+        line(b,4,y,10,y,color);line(b,10,y,10,y+5,color)
+        line(b,4,y+5,10,y+5,color)
+        b[5,y+2]=color;b[8,y+3]=color
+    else:
+        line(b,3,y,9,y,color);line(b,3,y,1,y+4,color)
+        line(b,9,y,11,y+4,color);line(b,1,y+4,11,y+4,color)
+        line(b,1,y+4,1,y+8,color);line(b,11,y+4,11,y+8,color)
+        line(b,1,y+8,11,y+8,color)
+        b[3,y+6]=WHITE;b[9,y+6]=WHITE
+        b[2,y+9]=color;b[10,y+9]=color
+
+def clock_label(b,value,y,color):
+    parts=str(value).split(' ')
+    clock=parts[0]
+    board_text(b,clock,110-min(29,len(clock)*6-1),y,color,max_width=29)
+    text(b,parts[1] if len(parts)>1 else '',114,y+2,DIM,max_width=8)
 
 def text(bitmap, value, x, y, color=WHITE, scale=1, max_width=128):
     value = str(value).upper()
@@ -37,13 +71,15 @@ def render(b, data, screen, state, age_minutes=0):
     rec=data.get('recommendation') if data else None
     disp=data.get('display',{}) if data else {}
     if not rec:
-        text(b,state,2,3,max_width=124)
-        text(b,'CHECK DASHBOARD' if state not in ('STARTING','CONNECTING TO WI-FI','LOADING COMMUTE') else 'PLEASE WAIT',2,14,DIM)
-        text(b,'LEAVE BY',2,26,DIM)
+        titles={'STARTING':'Starting','CONNECTING TO WI-FI':'Connecting Wi-Fi',
+            'LOADING COMMUTE':'Loading commute','NO ROUTE':'No route',
+            'MISSING CONFIGURATION':'Setup needed','SERVER ERROR':'Server error'}
+        board_text(b,titles.get(state,state),2,3,max_width=124)
+        text(b,'CHECK DASHBOARD' if state not in ('STARTING','CONNECTING TO WI-FI','LOADING COMMUTE') else 'PLEASE WAIT',2,18,DIM)
         return
     color={'improving':GREEN,'stable':YELLOW,'worsening':ORANGE}.get(rec.get('trend'),YELLOW)
     if screen==1:
-        text(b,'TRAFFIC '+rec.get('trend','stable'),2,2,color)
+        board_text(b,'Traffic '+rec.get('trend','stable'),2,2,color,max_width=124)
         change=disp.get('changeTime','')
         text(b,('CHANGE '+change) if change else 'STEADY ROAD AHEAD',2,12)
         text(b,'CHECK LEAVE-BY TIME',2,20,DIM)
@@ -71,14 +107,18 @@ def render(b, data, screen, state, age_minutes=0):
             text(b,points[-1].get('time','').replace(' AM','').replace(' PM',''),98,23,DIM,max_width=30)
         else: text(b,'WAITING FOR FORECAST',2,10,DIM)
     else:
-        text(b,'LEAVE BY' if rec.get('feasible') else 'LEAVE NOW',2,1,DIM)
-        travel=str(rec.get('predictedTravelMinutes',0))+' MIN'
-        text(b,travel,max(82,127-len(travel)*4),1,color,max_width=45)
-        leave=disp.get('leaveTime','NOW').split(' ')
-        text(b,leave[0],2,9,WHITE,3,76)  # 12:59 = 57 x 15 pixels.
-        text(b,leave[1] if len(leave)>1 else '',80,9)
-        text(b,'ARRIVE',80,16,DIM)
-        text(b,disp.get('arriveTime','--:--'),80,22,WHITE,max_width=48)
+        badge(b,2,DIM)
+        badge(b,19,GREEN,arrival=True)
+        board_text(b,'Leave by' if rec.get('feasible') else 'Leave now',17,2,max_width=65)
+        board_text(b,'Arrive',17,19,max_width=65)
+        clock_label(b,disp.get('leaveTime','NOW') if rec.get('feasible') else 'NOW',2,GREEN if rec.get('feasible') else ORANGE)
+        clock_label(b,disp.get('arriveTime','--:--'),19,GREEN)
+        text(b,str(rec.get('predictedTravelMinutes',0))+' MIN DRIVE',17,10,color,max_width=99)
+        if state=='CACHED/OFFLINE':
+            text(b,'OFFLINE '+str(min(9999,max(0,age_minutes)))+'M OLD',17,27,ORANGE,max_width=110)
+        else:
+            text(b,'ON TIME' if rec.get('feasible') else 'RUNNING LATE',17,27,DIM,max_width=110)
+        return
     # Bottom 5-pixel strip never overlaps main time (y9..23).
     age=str(min(9999,max(0,age_minutes)))+'M OLD'
     label=('OFFLINE '+age) if state=='CACHED/OFFLINE' else age

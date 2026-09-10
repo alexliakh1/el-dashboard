@@ -7,6 +7,7 @@ Response waiting/reading uses nonblocking sockets and never freezes the UI loop.
 import json
 import time
 import ssl
+import os
 
 MAX_BODY=12000
 def decode_response(raw):
@@ -28,7 +29,7 @@ def decode_response(raw):
         body=decoded
     elif 'content-length' in headers and len(body)!=int(headers['content-length']):raise ValueError('Truncated response')
     if len(body)>MAX_BODY:raise ValueError('Response too large')
-    return json.loads(body)
+    return json.loads(bytes(body).decode('utf-8'))
 
 def request(pool,url,token='',bypass=''):
     scheme,rest=url.split('://',1)
@@ -42,7 +43,12 @@ def request(pool,url,token='',bypass=''):
         yield None
         address=pool.getaddrinfo(hostname,port)[0][-1]
         sock=pool.socket(pool.AF_INET,pool.SOCK_STREAM)
-        if scheme=='https':sock=ssl.create_default_context().wrap_socket(sock,server_hostname=hostname)
+        if scheme=='https':
+            context=ssl.create_default_context()
+            # Explicit official root supplements firmware builds with a reduced CA bundle.
+            with open(os.getenv('COMMUTE_CA_FILE','/certs/gts-root-r4.pem')) as cert:
+                context.load_verify_locations(cadata=cert.read())
+            sock=context.wrap_socket(sock,server_hostname=hostname)
         sock.settimeout(3)
         sock.connect(address)
         yield None

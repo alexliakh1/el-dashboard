@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import type { DisplayPayload, Settings } from '../shared/types';
 import { AddressField } from './address-field';
@@ -10,28 +10,38 @@ export default function RoutePlanner() {
   const [settings,setSettings]=useState<Settings|null>(null), [arrival,setArrival]=useState('');
   const [data,setData]=useState<DisplayPayload|null>(null), [error,setError]=useState(''), [busy,setBusy]=useState(false);
   const [token,setToken]=useState(''), [connected,setConnected]=useState(false), [notice,setNotice]=useState(''), [dirty,setDirty]=useState(false);
+  const polling=useRef(false);
   async function load() {
     setBusy(true);setError('');
     try { const s=await api<Settings>('/api/settings');setSettings(s);
       const next=new Date();next.setDate(next.getDate()+1);next.setHours(8,30,0,0);
       setArrival(localValue(s.arriveBy?new Date(s.arriveBy):next));
-      setData(await api<DisplayPayload>('/api/display'));setConnected(true);
+      setData(await api<DisplayPayload>('/api/display?cached=1'));setConnected(true);
     } catch(e) {setError((e as Error).message);setConnected(false);} finally {setBusy(false);}
   }
   useEffect(()=>{const id=window.setTimeout(()=>void load(),0);return()=>window.clearTimeout(id);},[]);
   useEffect(()=>{
-    const id=window.setInterval(()=>{if(!busy && connected) api<DisplayPayload>('/api/display').then(d=>{setData(d);setError('');}).catch(e=>setError(e.message));},60000);
-    return ()=>window.clearInterval(id);
+    let cancelled=false;
+    async function check() {
+      if(busy || !connected || polling.current)return;
+      polling.current=true;
+      try {const d=await api<DisplayPayload>('/api/display');if(!cancelled){setData(d);setError('');}}
+      catch(e){if(!cancelled)setError((e as Error).message);}
+      finally{polling.current=false;}
+    }
+    const initial=window.setTimeout(()=>void check(),0);
+    const id=window.setInterval(()=>void check(),10000);
+    return ()=>{cancelled=true;window.clearTimeout(initial);window.clearInterval(id);};
   },[busy,connected]);
   function update<K extends keyof Settings>(key:K,value:Settings[K]) {setSettings(s=>s?{...s,[key]:value}:s);setDirty(true);setNotice('');}
   async function save(e:FormEvent) {
-    e.preventDefault();if(!settings)return;setBusy(true);setError('');setNotice('');
+    e.preventDefault();if(!settings)return;setBusy(true);setError('');setNotice('Calculating your route and forecast. This can take about 20–30 seconds.');
     try {const result=await api<{settings:Settings;display:DisplayPayload}>('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...settings,arriveBy:new Date(arrival).toISOString()})});
       setSettings(result.settings);setData(result.display);setDirty(false);setNotice('Settings saved. Your display will update on its next check.');
     }catch(e){setError((e as Error).message);}finally{setBusy(false);}
   }
   async function refresh() {
-    setBusy(true);setError('');try{setData(await api<DisplayPayload>('/api/route',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}));setNotice('Latest available traffic loaded.');}catch(e){setError((e as Error).message);}finally{setBusy(false);}
+    setBusy(true);setError('');setNotice('Checking traffic. Your existing result stays visible while the forecast updates.');try{setData(await api<DisplayPayload>('/api/route',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}));setNotice('Latest available traffic loaded.');}catch(e){setError((e as Error).message);}finally{setBusy(false);}
   }
   const rec=data?.recommendation;
   return <main className="dashboard">

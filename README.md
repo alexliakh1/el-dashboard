@@ -57,8 +57,8 @@ Equal active start/end means all day; overnight windows belong to the starting d
   Missing database configuration fails clearly. Settings, coordinates, cache, retry
   cooldown, and cross-isolate refresh leases survive server restarts.
 - `server/display.ts`: compact, explicit serialization (typically under 6 KB).
-  Server epoch and current UTC offset give the MCU local time without an IANA
-  timezone library. Forecast timestamps and stale ages are retained.
+  Server epoch keeps the MCU clock in UTC; formatted labels provide local time
+  without an IANA timezone library. Forecast timestamps and stale ages are retained.
 - `matrixportal/`: the complete hardware application, renderer, bounded network
   reader, response validator, bundled pixel font, and setup instructions.
 

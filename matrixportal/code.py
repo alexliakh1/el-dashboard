@@ -13,6 +13,7 @@ import rtc
 from layout import render
 from protocol import validate
 from network import request
+from clock_sync import synchronize
 
 PANEL_WIDTH=64
 PANEL_HEIGHT=32
@@ -44,19 +45,22 @@ tiles=[displayio.TileGrid(b,pixel_shader=palette) for b in bitmaps]
 group=displayio.Group();group.append(tiles[0]);display.root_group=group
 buffer_index=0
 data=None;state='STARTING';screen=0;received=0;next_fetch=0;failures=0
-last_draw=-1;screen_started=time.monotonic();transfer=None;pool=None
+last_draw=-1;last_frame=None;transfer=None;pool=None
 up=digitalio.DigitalInOut(board.BUTTON_UP);up.switch_to_input(pull=digitalio.Pull.UP)
 down=digitalio.DigitalInOut(board.BUTTON_DOWN);down.switch_to_input(pull=digitalio.Pull.UP)
 last_buttons=(False,False);button_changed=0
 def draw(now):
-    global buffer_index,last_draw
+    global buffer_index,last_draw,last_frame
     age=int((data.get('ageSeconds',0)+now-received)/60) if data else 0
-    buffer_index=1-buffer_index
     effective='CACHED/OFFLINE' if data and (state=='CACHED/OFFLINE' or age>=15) else state
+    frame=(id(data),screen,effective,age)
+    last_draw=now
+    if frame==last_frame:return
+    buffer_index=1-buffer_index
     render(bitmaps[buffer_index],data,screen,effective,age)
     group[0]=tiles[buffer_index]
     display.refresh(minimum_frames_per_second=0)
-    last_draw=now
+    last_frame=frame
 draw(time.monotonic())
 ssid=os.getenv('CIRCUITPY_WIFI_SSID');password=os.getenv('CIRCUITPY_WIFI_PASSWORD')
 url=os.getenv('COMMUTE_API_URL','');token=os.getenv('COMMUTE_DISPLAY_TOKEN','')
@@ -70,12 +74,9 @@ while True:
     buttons=(not up.value,not down.value)
     if buttons!=last_buttons and now-button_changed>.15:
         if buttons==(True,True):next_fetch=0
-        elif buttons[0] and not last_buttons[0]:screen=(screen-1)%3;screen_started=now
-        elif buttons[1] and not last_buttons[1]:screen=(screen+1)%3;screen_started=now
         last_buttons=buttons;button_changed=now;last_draw=-1
-    if data and data['display']['rotateScreens'] and now-screen_started>=(30 if screen==0 else 10):
-        screen=(screen+1)%3;screen_started=now
-    if data and not data['display']['rotateScreens']:screen=0
+    # Keep the readable departure board visible, including during background refresh.
+    screen=0
     if now-last_draw>=1:draw(now)
     if configured and now>=next_fetch:
         try:
@@ -85,6 +86,7 @@ while True:
                     wifi.radio.connect(ssid,password,timeout=3)
                     pool=socketpool.SocketPool(wifi.radio)
                 if pool is None:pool=socketpool.SocketPool(wifi.radio)
+                if time.localtime().tm_year<2024:synchronize(pool)
                 state='CACHED/OFFLINE' if data and failures else ('NORMAL' if data else 'LOADING COMMUTE')
                 draw(now);transfer=request(pool,url,token,bypass)
             result=next(transfer)
@@ -102,11 +104,13 @@ while True:
                     data=None;state='MISSING CONFIGURATION' if candidate['status']=='missing_configuration' else 'NO ROUTE'
                 elif candidate['status'] in ('server_error','loading'):
                     state='CACHED/OFFLINE' if data else ('SERVER ERROR' if candidate['status']=='server_error' else 'LOADING COMMUTE')
-                # Server supplies local offset; no timezone database on the MCU.
-                rtc.RTC().datetime=time.localtime(candidate['serverEpoch']+candidate['utcOffsetSeconds'])
+                print('Commute loaded:',candidate['status'])
+                # Keep RTC in UTC for TLS; display labels are localized by the server.
+                rtc.RTC().datetime=time.localtime(candidate['serverEpoch'])
                 next_fetch=time.monotonic()+max(30,min(3600,candidate['refreshAfterSeconds']))
                 failures=0;last_draw=-1;gc.collect()
-        except (OSError,ValueError,RuntimeError,KeyError,TypeError,StopIteration):
+        except (OSError,ValueError,RuntimeError,KeyError,TypeError,StopIteration) as error:
+            print('Commute connection failed:',type(error).__name__)
             if transfer:transfer.close()
             transfer=None;failures+=1
             state='CACHED/OFFLINE' if data else 'SERVER ERROR'

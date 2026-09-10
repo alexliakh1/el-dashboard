@@ -21,6 +21,7 @@
 # misc
 .DS_Store
 *.pem
+!matrixportal/certs/gts-root-r4.pem
 
 # debug
 npm-debug.log*
