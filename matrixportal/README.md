@@ -56,8 +56,12 @@ time, `12:59`, occupies 29×7 pixels, with AM/PM alongside. No desktop font is n
 ## Panel configuration
 
 `code.py` declares PANEL_WIDTH=64, PANEL_HEIGHT=32, CHAIN_ACROSS=2, TILE_DOWN=1,
-DISPLAY_WIDTH=128, DISPLAY_HEIGHT=32, and BIT_DEPTH=4. The RGBMatrix constructor uses
+DISPLAY_WIDTH=128, DISPLAY_HEIGHT=32, and BIT_DEPTH=3. The RGBMatrix constructor uses
 width=128, height=32, tile=1, serpentine=False, and doublebuffer=True.
+
+The default three-bit PWM mode leaves more scan-time headroom for a chained pair and
+is sufficient for this signage palette. Set `PANEL_BIT_DEPTH=4` in `settings.toml`
+only when testing a stable supply and cable path.
 
 Set PANEL_ROTATION to `0` or `180` if the entire assembly is upside down. Avoid
 90/270 because those make the logical surface 32×128. PANEL_SERPENTINE=`1` is exposed

@@ -21,7 +21,11 @@ CHAIN_ACROSS=2
 TILE_DOWN=1
 DISPLAY_WIDTH=128
 DISPLAY_HEIGHT=32
-BIT_DEPTH=4
+# Three-bit PWM leaves more scan-time headroom for a chained pair while preserving
+# the solid white/green/orange signage palette. Override with PANEL_BIT_DEPTH=4
+# when testing a particularly stable supply.
+BIT_DEPTH=int(os.getenv('PANEL_BIT_DEPTH','3'))
+if BIT_DEPTH not in (2,3,4):BIT_DEPTH=3
 # Only 0/180 retain the horizontal layout. Serpentine affects multi-row tiling.
 ROTATION=int(os.getenv('PANEL_ROTATION','0'))
 if ROTATION not in (0,180):ROTATION=0
