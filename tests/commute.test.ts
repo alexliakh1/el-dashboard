@@ -47,7 +47,7 @@ test('service caches series/current, persists and falls back on failure',async()
     const t=url.searchParams.get('departAt'),arr=url.searchParams.get('arriveAt');const departure=arr?Date.parse(arr)-20*60000:t&&t!=='now'?Date.parse(t):now;
     return Response.json({routes:[{summary:{departureTime:new Date(departure).toISOString(),arrivalTime:new Date(departure+20*60000).toISOString(),travelTimeInSeconds:1200,noTrafficTravelTimeInSeconds:1000,lengthInMeters:15000}}]});
   }) as typeof fetch;
-  const provider=new TomTom('TEST_ONLY_KEY',storage,fetcher);
+  const provider=new TomTom('TEST_ONLY_KEY',storage,fetcher,0);
   assert.equal((await commute(s,storage,provider,now)).status,'ok');const first=calls;
   await commute(s,storage,provider,now+30000);assert.equal(calls,first);
   await commute(s,storage,provider,now+300000);assert.equal(calls,first+1);
@@ -58,6 +58,18 @@ test('provider does not bind native fetch to its class instance',async()=>{
   const fetcher=async function(this:unknown) { assert.equal(this,undefined);return Response.json({ok:true}); };
   const provider=new TomTom('TEST_ONLY_KEY',new Storage(db()),fetcher);
   assert.deepEqual(await provider.json(new URL('https://api.tomtom.com')),{ok:true});
+});
+test('provider 429 imposes at least five minutes of cooldown',async()=>{
+  const provider=new TomTom('TEST_ONLY_KEY',new Storage(db()),async()=>new Response(null,{status:429,headers:{'Retry-After':'600'}}));
+  await assert.rejects(()=>provider.json(new URL('https://api.tomtom.com/routing/1/test')),e=>e instanceof ProviderError && e.retryAfterMs===600000 && /limiting/.test(e.message));
+});
+test('sequential routing calls are paced',async()=>{
+  const calls:number[]=[];
+  const fetcher=async()=>{calls.push(Date.now());return Response.json({routes:[{summary:{travelTimeInSeconds:1200,lengthInMeters:1000,departureTime:point(0,1).departure,arrivalTime:s.arriveBy}}]});};
+  const p=new TomTom('TEST_ONLY_KEY',new Storage(db()),fetcher,30);
+  const location={lat:37,lon:-122,label:'Test'};
+  await p.route(location,location,'now');await p.route(location,location,'now');
+  assert.ok(calls[1]-calls[0]>=25);
 });
 test('API separates admin/display access and validates method/body',async()=>{
   const env={DB:db(),ADMIN_TOKEN:'admin',DISPLAY_TOKEN:'display'};

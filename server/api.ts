@@ -38,7 +38,8 @@ export async function handleApi(request:Request,env:ApiEnv):Promise<Response> {
       const raw=await request.text(); if(raw.length>4096) return json({error:'Settings are too large.'},413);
       let s:Settings; try{s=validateSettings(JSON.parse(raw));}catch(e){return json({error:e instanceof SyntaxError?'Invalid JSON.':(e as Error).message},400);}
       if(Date.parse(s.arriveBy)<=Date.now() || Date.parse(s.arriveBy)>Date.now()+365*86400000) return json({error:'Choose an arrival within the next year.'},400);
-      await storage.set('settings',s); await storage.set('retry',{until:0});
+      // A settings save must not cancel a provider-imposed cooldown.
+      await storage.set('settings',s);
       return json({settings:s,display:await commute(s,storage,provider,Date.now(),true)});
     }
     if(u.pathname==='/api/route') {

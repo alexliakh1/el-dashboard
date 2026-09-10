@@ -14,7 +14,7 @@ export async function commute(s:Settings, storage:Storage, provider:TomTom, now=
   if (retry && retry.until>now) return serializeDisplay(s,old,now,old?'cached':retry.kind,retry.message);
   const currentDue=!old || now-Date.parse(old.updatedAt)>=currentTtl || (force && now-Date.parse(old.updatedAt)>=60000);
   if (!currentDue) return serializeDisplay(s,old,now);
-  const owner=await storage.acquire('refresh',now);
+  const owner=await storage.acquire('refresh',now,240000);
   if (!owner) return serializeDisplay(s,old,now,old?'cached':'loading','Refreshing commute.');
   try {
     const [origin,destination]=await Promise.all([provider.geocode(s.origin),provider.geocode(s.destination)]);
@@ -31,8 +31,8 @@ export async function commute(s:Settings, storage:Storage, provider:TomTom, now=
       if(seed>now+80*60000) for(let t=seed-30*60000;t<=seed+10*60000;t+=10*60000) if(t>now) times.add(Math.floor(t/60000)*60000);
       predictions=[current];
       const candidates=[...times].sort((a,b)=>a-b);
-      // Three concurrent calls limit provider pressure and complete under the lease.
-      for(let i=0;i<candidates.length;i+=3) predictions.push(...await Promise.all(candidates.slice(i,i+3).map(async t=>prediction(await provider.route(origin,destination,new Date(t).toISOString()),new Date(t).toISOString()))));
+      // Sequential, paced calls avoid exceeding provider per-second quotas.
+      for(const t of candidates) predictions.push(prediction(await provider.route(origin,destination,new Date(t).toISOString()),new Date(t).toISOString()));
       predictionsAt=new Date(now).toISOString();
     }
     const usable=[current,...predictions.filter(p=>Date.parse(p.departure)>now)];
@@ -44,7 +44,7 @@ export async function commute(s:Settings, storage:Storage, provider:TomTom, now=
     return serializeDisplay(s,snapshot,now);
   } catch(e) {
     const error=e instanceof ProviderError?e:new ProviderError('server_error');
-    await storage.set('retry',{until:now+60000,kind:error.kind,message:error.message});
+    await storage.set('retry',{until:Date.now()+error.retryAfterMs,kind:error.kind,message:error.message});
     return serializeDisplay(s,old,now,old?'cached':error.kind,error.message);
   } finally { await storage.release('refresh',owner); }
 }

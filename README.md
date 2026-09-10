@@ -109,9 +109,9 @@ inside an ephemeral Worker.
 - Two initial geocodes are cached for 30 days. Search queries are debounced 250ms,
   cached 24h, and globally limited to roughly one new request per 300ms. Selected
   coordinates are reused. The MCU never searches addresses.
-- A database lease prevents overlapping jobs across Worker isolates; up to three
-  prediction requests run concurrently within one job. Failed refreshes preserve
-  old data and impose a one-minute provider cooldown.
+- A database lease prevents overlapping jobs across Worker isolates; only one
+  prediction request runs at a time, paced at least 1.2 seconds apart. Failed refreshes preserve
+  old data and impose a one-minute provider cooldown; HTTP 429 pauses at least five minutes and settings saves cannot bypass it.
 
 Actual billing depends on your TomTom plan; these are request counts, not prices.
 
@@ -175,3 +175,4 @@ require the physical S3. No hardware execution is claimed.
 - [Adafruit S3 pinouts and buttons](https://learn.adafruit.com/adafruit-matrixportal-s3/pinouts)
 - [CircuitPython RGBMatrix](https://docs.circuitpython.org/en/stable/shared-bindings/rgbmatrix/index.html)
 - [CircuitPython TLS socket API](https://docs.circuitpython.org/en/stable/shared-bindings/ssl/index.html)
+
