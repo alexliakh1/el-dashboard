@@ -10,12 +10,25 @@ export function parseSummary(data:unknown):Summary {
   return s;
 }
 export class TomTom {
-  constructor(readonly key:string, readonly storage:Storage, readonly fetcher:typeof fetch=fetch) {}
+  constructor(readonly key:string, readonly storage:Storage, readonly fetcher:typeof fetch=(input,init)=>fetch(input,init)) {}
   async json(url:URL) {
     if (!this.key) throw new ProviderError('missing_configuration');
     url.searchParams.set('key',this.key);
-    try { const r=await this.fetcher(url,{signal:AbortSignal.timeout(8000)}); if (!r.ok) throw new ProviderError('server_error'); return await r.json(); }
-    catch(e) { if (e instanceof ProviderError) throw e; throw new ProviderError('server_error'); }
+    try {
+      // Workers' native fetch must not receive the TomTom instance as `this`.
+      const fetcher=this.fetcher;
+      const r=await fetcher(url,{signal:AbortSignal.timeout(8000)});
+      if (!r.ok) {
+        // Only fixed service names/statuses are logged; URLs contain credentials.
+        console.warn('tomtom_http_failure',url.pathname.startsWith('/routing/')?'routing':'search',r.status);
+        throw new ProviderError('server_error');
+      }
+      return await r.json();
+    } catch(e) {
+      if (e instanceof ProviderError) throw e;
+      console.warn('tomtom_transport_failure',e instanceof Error?e.name:'unknown');
+      throw new ProviderError('server_error');
+    }
   }
   async geocode(query:string):Promise<Location> {
     const key='geo:'+query.toLowerCase();

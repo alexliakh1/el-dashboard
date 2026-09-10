@@ -54,6 +54,11 @@ test('service caches series/current, persists and falls back on failure',async()
   fail=true;const offline=await commute(s,storage,provider,now+600000);assert.equal(offline.status,'cached');assert.ok(offline.recommendation);assert.ok(!JSON.stringify(offline).includes('secret'));
 });
 test('TomTom transport errors never expose provider keys',async()=>{const provider=new TomTom('PRIVATE_KEY',new Storage(db()),async()=>{throw Error('PRIVATE_KEY');});await assert.rejects(()=>provider.json(new URL('https://api.tomtom.com')),e=>e instanceof ProviderError&&!e.message.includes('PRIVATE_KEY'));});
+test('provider does not bind native fetch to its class instance',async()=>{
+  const fetcher=async function(this:unknown) { assert.equal(this,undefined);return Response.json({ok:true}); };
+  const provider=new TomTom('TEST_ONLY_KEY',new Storage(db()),fetcher);
+  assert.deepEqual(await provider.json(new URL('https://api.tomtom.com')),{ok:true});
+});
 test('API separates admin/display access and validates method/body',async()=>{
   const env={DB:db(),ADMIN_TOKEN:'admin',DISPLAY_TOKEN:'display'};
   assert.equal((await handleApi(new Request('https://commute.test/api/settings'),env)).status,401);
