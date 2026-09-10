@@ -1,0 +1,13 @@
+CIRCUITPY_WIFI_SSID="your-wifi-name"
+CIRCUITPY_WIFI_PASSWORD="your-wifi-password"
+COMMUTE_API_URL="https://your-commute-server.example/api/display"
+COMMUTE_DISPLAY_TOKEN="your-separate-read-only-display-token"
+# Private Sites deployments also require their existing Sites access token.
+# Leave empty for a standalone Worker. This is NOT a TomTom key.
+OAI_SITES_TOKEN=""
+# Informational: configure the same timezone in the dashboard. Server provides DST offset.
+DISPLAY_TIMEZONE="America/Los_Angeles"
+PANEL_ROTATION="0"
+PANEL_SERPENTINE="0"
+# Only enable HTTP on a trusted local network for development.
+ALLOW_INSECURE_HTTP="0"

@@ -1,10 +1,15 @@
+import { handleApi } from '../server/api';
+import type { Database } from '../server/storage';
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 
 interface Env {
-  ASSETS: Fetcher;
+  ASSETS: { fetch(request: Request): Promise<Response> };
   TOMTOM_API_KEY: string;
+  DB?: Database;
+  ADMIN_TOKEN?: string;
+  DISPLAY_TOKEN?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -19,237 +24,6 @@ interface ExecutionContext {
   passThroughOnException(): void;
 }
 
-type GeocodeResult = {
-  address?: {
-    freeformAddress?: string;
-    postalCode?: string;
-    streetNumber?: string;
-  };
-  id?: string;
-  poi?: { name?: string };
-  position?: { lat?: number; lon?: number };
-};
-
-async function handleSearchRequest(url: URL, env: Env) {
-  if (!env.TOMTOM_API_KEY) {
-    return Response.json(
-      { error: "TomTom search is not configured yet." },
-      { status: 503 },
-    );
-  }
-
-  const query = (url.searchParams.get("q") || "").trim();
-  if (query.length < 3) {
-    return Response.json({ suggestions: [] });
-  }
-  if (query.length > 160) {
-    return Response.json({ error: "Search is too long." }, { status: 400 });
-  }
-
-  const searchUrl = new URL(
-    `https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json`,
-  );
-  const numericPrefix = query.match(/^\d{1,8}/)?.[0] || "";
-  searchUrl.searchParams.set("key", env.TOMTOM_API_KEY);
-  searchUrl.searchParams.set("limit", numericPrefix ? "10" : "5");
-  searchUrl.searchParams.set("typeahead", "true");
-  searchUrl.searchParams.set("language", "en-US");
-  searchUrl.searchParams.set("countrySet", "US");
-  if (numericPrefix) {
-    searchUrl.searchParams.set("idxSet", "PAD,Addr");
-    if (/^\d+$/.test(query)) {
-      // A house number alone is ambiguous nationwide. Bias numeric-only
-      // searches toward the dashboard's Los Gatos / Monte Sereno area.
-      searchUrl.searchParams.set("lat", "37.2358");
-      searchUrl.searchParams.set("lon", "-121.9624");
-      searchUrl.searchParams.set("radius", "50000");
-    }
-  }
-
-  try {
-    const response = await fetch(searchUrl);
-    const data = (await response.json()) as { results?: GeocodeResult[] };
-    if (!response.ok) {
-      return Response.json({ error: "Address search failed." }, { status: 502 });
-    }
-
-    const rankedResults = (data.results || []).map(function (result, index) {
-      const address = result.address?.freeformAddress || "";
-      const streetNumber =
-        result.address?.streetNumber || address.match(/^(\d+[A-Za-z-]*)\b/)?.[1] || "";
-      let rank = index;
-
-      if (numericPrefix) {
-        if (streetNumber === numericPrefix) {
-          rank = 0;
-        } else if (streetNumber.startsWith(numericPrefix)) {
-          rank = 100 + index;
-        } else if (address.startsWith(numericPrefix)) {
-          rank = 200 + index;
-        } else if (result.address?.postalCode?.startsWith(numericPrefix)) {
-          rank = 500 + index;
-        } else {
-          rank = 300 + index;
-        }
-      }
-
-      return { rank, result };
-    });
-
-    const suggestions = rankedResults
-      .sort(function (a, b) {
-        return a.rank - b.rank;
-      })
-      .map(function (item) {
-        return item.result;
-      })
-      .filter(function (result) {
-        return Boolean(result.address?.freeformAddress);
-      })
-      .slice(0, 5)
-      .map(function (result, index) {
-        const address = result.address?.freeformAddress || "";
-        const name = result.poi?.name || "";
-        return {
-          id: result.id || `${index}-${address}`,
-          label: name || address,
-          secondary: name ? address : "",
-          value: name ? `${name}, ${address}` : address,
-        };
-      });
-
-    return Response.json({ suggestions });
-  } catch {
-    return Response.json({ error: "Address search failed." }, { status: 502 });
-  }
-}
-
-async function geocodeLocation(query: string, apiKey: string) {
-  const geocodeUrl = new URL(
-    `https://api.tomtom.com/search/2/geocode/${encodeURIComponent(query)}.json`,
-  );
-  geocodeUrl.searchParams.set("key", apiKey);
-  geocodeUrl.searchParams.set("limit", "1");
-
-  const response = await fetch(geocodeUrl);
-  if (!response.ok) {
-    throw new Error("TomTom geocoding failed");
-  }
-
-  const data = (await response.json()) as { results?: GeocodeResult[] };
-  const match = data.results?.[0];
-  if (
-    !match?.position ||
-    typeof match.position.lat !== "number" ||
-    typeof match.position.lon !== "number"
-  ) {
-    throw new Error(`Location not found: ${query}`);
-  }
-
-  return {
-    label: match.address?.freeformAddress || query,
-    lat: match.position.lat,
-    lon: match.position.lon,
-  };
-}
-
-async function handleRouteRequest(request: Request, env: Env) {
-  if (!env.TOMTOM_API_KEY) {
-    return Response.json(
-      { error: "TomTom routing is not configured yet." },
-      { status: 503 },
-    );
-  }
-
-  let body: { arriveAt?: unknown; end?: unknown; start?: unknown };
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "Invalid request." }, { status: 400 });
-  }
-
-  const start = typeof body.start === "string" ? body.start.trim() : "";
-  const end = typeof body.end === "string" ? body.end.trim() : "";
-  const arriveAt = typeof body.arriveAt === "string" ? body.arriveAt : "";
-  const arrivalDate = new Date(arriveAt);
-
-  if (!start || !end || start.length > 240 || end.length > 240) {
-    return Response.json(
-      { error: "Enter a valid start and destination." },
-      { status: 400 },
-    );
-  }
-  if (!arriveAt || Number.isNaN(arrivalDate.getTime())) {
-    return Response.json({ error: "Choose a valid arrival time." }, { status: 400 });
-  }
-  if (arrivalDate.getTime() <= Date.now()) {
-    return Response.json(
-      { error: "Choose an arrival time in the future." },
-      { status: 400 },
-    );
-  }
-
-  try {
-    const [origin, destination] = await Promise.all([
-      geocodeLocation(start, env.TOMTOM_API_KEY),
-      geocodeLocation(end, env.TOMTOM_API_KEY),
-    ]);
-    const routeUrl = new URL(
-      `https://api.tomtom.com/routing/1/calculateRoute/${origin.lat},${origin.lon}:${destination.lat},${destination.lon}/json`,
-    );
-    routeUrl.searchParams.set("key", env.TOMTOM_API_KEY);
-    routeUrl.searchParams.set("traffic", "true");
-    routeUrl.searchParams.set("travelMode", "car");
-    routeUrl.searchParams.set("routeType", "fastest");
-    routeUrl.searchParams.set("routeRepresentation", "summaryOnly");
-    routeUrl.searchParams.set("computeTravelTimeFor", "all");
-    routeUrl.searchParams.set("arriveAt", arrivalDate.toISOString());
-
-    const response = await fetch(routeUrl);
-    const data = (await response.json()) as {
-      detailedError?: { message?: string };
-      routes?: Array<{
-        summary?: {
-          arrivalTime?: string;
-          departureTime?: string;
-          historicTrafficTravelTimeInSeconds?: number;
-          lengthInMeters?: number;
-          liveTrafficIncidentsTravelTimeInSeconds?: number;
-          noTrafficTravelTimeInSeconds?: number;
-          trafficDelayInSeconds?: number;
-          travelTimeInSeconds?: number;
-        };
-      }>;
-    };
-    const summary = data.routes?.[0]?.summary;
-
-    if (!response.ok || !summary?.departureTime || !summary.arrivalTime) {
-      throw new Error(data.detailedError?.message || "No driving route was found.");
-    }
-
-    const travelTimeInSeconds = summary.travelTimeInSeconds || 0;
-    const noTrafficTravelTimeInSeconds =
-      summary.noTrafficTravelTimeInSeconds || travelTimeInSeconds;
-    const expectedTrafficDelayInSeconds = Math.max(
-      summary.trafficDelayInSeconds || 0,
-      travelTimeInSeconds - noTrafficTravelTimeInSeconds,
-    );
-
-    return Response.json({
-      arrivalTime: summary.arrivalTime,
-      departureTime: summary.departureTime,
-      distanceMeters: summary.lengthInMeters || 0,
-      endLabel: destination.label,
-      startLabel: origin.label,
-      trafficDelayInSeconds: expectedTrafficDelayInSeconds,
-      travelTimeInSeconds,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "No route was found.";
-    return Response.json({ error: message }, { status: 502 });
-  }
-}
-
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
 // To route SVGs through the optimizer (with security headers), set
@@ -260,25 +34,7 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.pathname === "/api/search") {
-      if (request.method !== "GET") {
-        return new Response("Method not allowed", {
-          status: 405,
-          headers: { Allow: "GET" },
-        });
-      }
-      return handleSearchRequest(url, env);
-    }
-
-    if (url.pathname === "/api/route") {
-      if (request.method !== "POST") {
-        return new Response("Method not allowed", {
-          status: 405,
-          headers: { Allow: "POST" },
-        });
-      }
-      return handleRouteRequest(request, env);
-    }
+    if (url.pathname.startsWith('/api/')) return handleApi(request, env);
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
@@ -296,3 +52,5 @@ const worker = {
 };
 
 export default worker;
+
+

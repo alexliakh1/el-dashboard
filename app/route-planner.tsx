@@ -1,379 +1,67 @@
 "use client";
-
-import { FormEvent, KeyboardEvent, useEffect, useId, useMemo, useState } from "react";
-
-type AddressSuggestion = {
-  id: string;
-  label: string;
-  secondary: string;
-  value: string;
-};
-
-type RouteResult = {
-  arrivalTime: string;
-  departureTime: string;
-  distanceMeters: number;
-  endLabel: string;
-  startLabel: string;
-  trafficDelayInSeconds: number;
-  travelTimeInSeconds: number;
-};
-
-function toLocalInputValue(date: Date) {
-  let offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
-}
-
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  }).format(new Date(value));
-}
-
-function formatTrafficDelay(seconds: number) {
-  if (seconds > 0 && seconds < 60) {
-    return "<1 min";
-  }
-  return `${Math.round(seconds / 60)} min`;
-}
-
-type AddressFieldProps = {
-  dotClass: "start-dot" | "end-dot";
-  label: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  value: string;
-};
-
-function AddressField({ dotClass, label, onChange, placeholder, value }: AddressFieldProps) {
-  let inputId = useId();
-  let listId = `${inputId}-suggestions`;
-  let [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
-  let [isSearching, setIsSearching] = useState(false);
-  let [isOpen, setIsOpen] = useState(false);
-  let [activeIndex, setActiveIndex] = useState(-1);
-
-  useEffect(
-    function () {
-      let query = value.trim();
-      if (query.length < 3) {
-        setSuggestions([]);
-        setIsOpen(false);
-        setIsSearching(false);
-        return;
-      }
-
-      let controller = new AbortController();
-      let timer = window.setTimeout(function () {
-        setIsSearching(true);
-        fetch(`/api/search?q=${encodeURIComponent(query)}`, {
-          signal: controller.signal,
-        })
-          .then(function (response) {
-            if (!response.ok) {
-              throw new Error("Address search failed");
-            }
-            return response.json();
-          })
-          .then(function (data) {
-            setSuggestions(data.suggestions || []);
-            setActiveIndex(-1);
-            setIsOpen(true);
-          })
-          .catch(function (error) {
-            if (error.name !== "AbortError") {
-              setSuggestions([]);
-              setIsOpen(false);
-            }
-          })
-          .finally(function () {
-            setIsSearching(false);
-          });
-      }, 250);
-
-      return function () {
-        window.clearTimeout(timer);
-        controller.abort();
-      };
-    },
-    [value],
-  );
-
-  function chooseSuggestion(suggestion: AddressSuggestion) {
-    onChange(suggestion.value);
-    setSuggestions([]);
-    setIsOpen(false);
-    setActiveIndex(-1);
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (!isOpen || suggestions.length === 0) {
-      return;
-    }
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setActiveIndex(function (current) {
-        return current >= suggestions.length - 1 ? 0 : current + 1;
-      });
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setActiveIndex(function (current) {
-        return current <= 0 ? suggestions.length - 1 : current - 1;
-      });
-    } else if (event.key === "Enter" && activeIndex >= 0) {
-      event.preventDefault();
-      chooseSuggestion(suggestions[activeIndex]);
-    } else if (event.key === "Escape") {
-      setIsOpen(false);
-      setActiveIndex(-1);
-    }
-  }
-
-  return (
-    <div className="address-field">
-      <label className="field-label" htmlFor={inputId}>
-        <span className={`route-dot ${dotClass}`} aria-hidden="true" />
-        {label}
-      </label>
-      <div className="autocomplete-shell">
-        <input
-          id={inputId}
-          type="text"
-          value={value}
-          onChange={function (event) {
-            onChange(event.target.value);
-          }}
-          onFocus={function () {
-            if (suggestions.length > 0) {
-              setIsOpen(true);
-            }
-          }}
-          onBlur={function () {
-            window.setTimeout(function () {
-              setIsOpen(false);
-              setActiveIndex(-1);
-            }, 120);
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          autoComplete="off"
-          role="combobox"
-          aria-autocomplete="list"
-          aria-controls={listId}
-          aria-expanded={isOpen}
-          aria-activedescendant={activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
-          required
-        />
-        {isSearching && <span className="searching-indicator">Searching…</span>}
-        {isOpen && suggestions.length > 0 && (
-          <ul className="suggestions" id={listId} role="listbox">
-            {suggestions.map(function (suggestion, index) {
-              return (
-                <li
-                  id={`${listId}-${index}`}
-                  key={suggestion.id}
-                  role="option"
-                  aria-selected={index === activeIndex}
-                  className={index === activeIndex ? "is-active" : ""}
-                  onMouseDown={function (event) {
-                    event.preventDefault();
-                    chooseSuggestion(suggestion);
-                  }}
-                >
-                  <span className="suggestion-pin" aria-hidden="true" />
-                  <span>
-                    <strong>{suggestion.label}</strong>
-                    {suggestion.secondary && <small>{suggestion.secondary}</small>}
-                  </span>
-                </li>
-              );
-            })}
-            <li className="suggestions-credit" aria-hidden="true">
-              Powered by TomTom
-            </li>
-          </ul>
-        )}
-      </div>
-    </div>
-  );
-}
-
+import { useEffect, useState, type FormEvent } from 'react';
+import Link from 'next/link';
+import type { DisplayPayload, Settings } from '../shared/types';
+import { AddressField } from './address-field';
+import { api, setAccessToken } from './api-client';
+import { DisplayPreview, PredictionGraph } from './visuals';
+const localValue=(d:Date)=>new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
 export default function RoutePlanner() {
-  let defaultArrival = useMemo(function () {
-    let next = new Date();
-    next.setDate(next.getDate() + 1);
-    next.setHours(8, 30, 0, 0);
-    return toLocalInputValue(next);
-  }, []);
-  let [start, setStart] = useState("");
-  let [end, setEnd] = useState("");
-  let [arriveAt, setArriveAt] = useState(defaultArrival);
-  let [result, setResult] = useState<RouteResult | null>(null);
-  let [error, setError] = useState("");
-  let [isLoading, setIsLoading] = useState(false);
-
-  async function calculateRoute(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    setResult(null);
-    setIsLoading(true);
-
-    try {
-      let response = await fetch("/api/route", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          start: start.trim(),
-          end: end.trim(),
-          arriveAt: new Date(arriveAt).toISOString(),
-        }),
-      });
-      let data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "We couldn’t calculate that route.");
-      }
-
-      setResult(data);
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "We couldn’t calculate that route.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
+  const [settings,setSettings]=useState<Settings|null>(null), [arrival,setArrival]=useState('');
+  const [data,setData]=useState<DisplayPayload|null>(null), [error,setError]=useState(''), [busy,setBusy]=useState(false);
+  const [token,setToken]=useState(''), [connected,setConnected]=useState(false), [notice,setNotice]=useState(''), [dirty,setDirty]=useState(false);
+  async function load() {
+    setBusy(true);setError('');
+    try { const s=await api<Settings>('/api/settings');setSettings(s);
+      const next=new Date();next.setDate(next.getDate()+1);next.setHours(8,30,0,0);
+      setArrival(localValue(s.arriveBy?new Date(s.arriveBy):next));
+      setData(await api<DisplayPayload>('/api/display'));setConnected(true);
+    } catch(e) {setError((e as Error).message);setConnected(false);} finally {setBusy(false);}
   }
-
-  return (
-    <main className="site-shell">
-      <header className="topbar">
-        <a className="brand" href="#top" aria-label="Leave by home">
-          <span className="brand-mark" aria-hidden="true">LB</span>
-          <span>Leave by</span>
-        </a>
-        <span className="live-pill">
-          <span aria-hidden="true" /> Traffic-aware routing
-        </span>
-      </header>
-
-      <section className="hero" id="top">
-        <div className="hero-copy">
-          <p className="eyebrow">TomTom route planner</p>
-          <h1>Know when to leave.<br />Arrive right on time.</h1>
-          <p className="intro">
-            Enter where you’re going and when you need to be there. We’ll work
-            backward through expected traffic and give you a leave-by time.
-          </p>
-        </div>
-
-        <div className="planner-card">
-          <form onSubmit={calculateRoute}>
-            <div className="route-fields">
-              <AddressField
-                dotClass="start-dot"
-                label="Start location"
-                value={start}
-                onChange={setStart}
-                placeholder="123 Main St, Los Gatos"
-              />
-
-              <div className="route-connector" aria-hidden="true" />
-
-              <AddressField
-                dotClass="end-dot"
-                label="Destination"
-                value={end}
-                onChange={setEnd}
-                placeholder="School, office, or address"
-              />
-            </div>
-
-            <label className="arrival-field">
-              <span className="field-label">Arrive by</span>
-              <input
-                type="datetime-local"
-                value={arriveAt}
-                min={toLocalInputValue(new Date())}
-                onChange={function (event) { setArriveAt(event.target.value); }}
-                required
-              />
-            </label>
-
-            <button type="submit" disabled={isLoading}>
-              {isLoading ? "Checking traffic…" : "Calculate leave time"}
-              {!isLoading && <span aria-hidden="true">→</span>}
-            </button>
-          </form>
-
-          <div className="trust-row">
-            <span>Live + historical traffic</span>
-            <span>Fastest driving route</span>
-            <span>Powered by TomTom</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="result-zone" aria-live="polite">
-        {!result && !error && (
-          <div className="result-placeholder">
-            <span className="placeholder-icon" aria-hidden="true">↗</span>
-            <div>
-              <p>Your leave-by time will appear here</p>
-              <span>Plan tomorrow morning, school pickup, or your next meeting.</span>
-            </div>
-          </div>
-        )}
-
-        {error && (
-          <div className="error-card" role="alert">
-            <strong>Route not found</strong>
-            <span>{error}</span>
-          </div>
-        )}
-
-        {result && (
-          <article className="result-card">
-            <div className="result-summary">
-              <p className="eyebrow">Your leave-by time</p>
-              <p className="leave-time">{formatTime(result.departureTime)}</p>
-              <p className="leave-date">{formatDate(result.departureTime)}</p>
-            </div>
-            <div className="trip-details">
-              <div className="detail-route">
-                <span className="route-dot start-dot" aria-hidden="true" />
-                <div><small>From</small><p>{result.startLabel}</p></div>
-              </div>
-              <div className="detail-line" aria-hidden="true" />
-              <div className="detail-route">
-                <span className="route-dot end-dot" aria-hidden="true" />
-                <div><small>To</small><p>{result.endLabel}</p></div>
-              </div>
-              <div className="metrics">
-                <div><small>Drive time</small><strong>{Math.round(result.travelTimeInSeconds / 60)} min</strong></div>
-                <div><small>Distance</small><strong>{(result.distanceMeters / 1609.344).toFixed(1)} mi</strong></div>
-                <div><small>Expected traffic</small><strong>{formatTrafficDelay(result.trafficDelayInSeconds)}</strong></div>
-                <div><small>Arrive</small><strong>{formatTime(result.arrivalTime)}</strong></div>
-              </div>
-            </div>
-          </article>
-        )}
-      </section>
-
-      <footer>
-        <span>Leave by</span>
-        <span>Traffic estimates can change. Leave a little buffer for important trips.</span>
-      </footer>
-    </main>
-  );
+  useEffect(()=>{const id=window.setTimeout(()=>void load(),0);return()=>window.clearTimeout(id);},[]);
+  useEffect(()=>{
+    const id=window.setInterval(()=>{if(!busy && connected) api<DisplayPayload>('/api/display').then(d=>{setData(d);setError('');}).catch(e=>setError(e.message));},60000);
+    return ()=>window.clearInterval(id);
+  },[busy,connected]);
+  function update<K extends keyof Settings>(key:K,value:Settings[K]) {setSettings(s=>s?{...s,[key]:value}:s);setDirty(true);setNotice('');}
+  async function save(e:FormEvent) {
+    e.preventDefault();if(!settings)return;setBusy(true);setError('');setNotice('');
+    try {const result=await api<{settings:Settings;display:DisplayPayload}>('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...settings,arriveBy:new Date(arrival).toISOString()})});
+      setSettings(result.settings);setData(result.display);setDirty(false);setNotice('Settings saved. Your display will update on its next check.');
+    }catch(e){setError((e as Error).message);}finally{setBusy(false);}
+  }
+  async function refresh() {
+    setBusy(true);setError('');try{setData(await api<DisplayPayload>('/api/route',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}));setNotice('Latest available traffic loaded.');}catch(e){setError((e as Error).message);}finally{setBusy(false);}
+  }
+  const rec=data?.recommendation;
+  return <main className="dashboard">
+    <header className="dash-top"><Link className="brand" href="/"><span className="brand-mark">LB</span>Leave by</Link><span className="connection">{connected&&!error?'Server connected':busy?'Connecting…':'Server disconnected'}</span></header>
+    <div className="page-heading"><div><p className="eyebrow">Your daily head start</p><h1>A calmer commute.</h1></div><button className="secondary" type="button" disabled={busy||!settings} onClick={refresh}>{busy?'Checking traffic…':'↻ Refresh traffic'}</button></div>
+    {error&&<div role="alert" className="error-card">{error}</div>}
+    {!connected&&<form className="panel access" onSubmit={e=>{e.preventDefault();setAccessToken(token);void load();}}><label>Dashboard access token<input type="password" autoComplete="current-password" value={token} onChange={e=>setToken(e.target.value)}/></label><button disabled={busy}>Connect</button><p>Use the separate dashboard token configured on your server.</p></form>}
+    <div className="dashboard-grid"><section className="commute-output" aria-label="Commute recommendation">
+      <article className="recommendation-card" aria-live="polite"><div className="card-heading"><span className="eyebrow">{data?.status==='cached'?'Last known recommendation':'Your departure'}</span><span className={`trend ${rec?.trend||''}`}>{rec?.trend||'Awaiting route'}</span></div>
+        <p className="departure-label">{rec?.feasible?'Leave by':rec?'Leave now':'Let’s plan your trip'}</p><div className="departure-time">{rec?.feasible?data?.display.leaveTime:rec?'NOW':'—:—'}</div>
+        <p className="recommendation-copy">{data?.message || rec?.message || 'Save an origin, destination, and arrival time to get your recommendation.'}</p>
+        <div className="metric-grid"><Metric label="Current drive" value={rec?`${rec.currentTravelMinutes} min`:'—'}/><Metric label="Traffic delay" value={rec?`+${rec.trafficDelayMinutes} min`:'—'}/><Metric label="Arrive by" value={data?.display.arriveTime||'—'}/></div>
+        <p className="meta">{data?.updatedAt?`Updated ${new Date(data.updatedAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})} · ${data.active?'Commute window active':'Reduced refresh outside active hours'}`:'Live + historical estimates from TomTom'}</p>
+      </article>
+      <article className="panel"><div className="card-heading"><h2>Traffic ahead</h2><span className="meta">Next 90 minutes</span></div><PredictionGraph data={data}/><p className="meta">{rec?`${rec.parkingWalkingMinutes} min parking / walking + ${rec.safetyBufferMinutes} min safety buffer included.`:'Predictions appear after your route is saved.'}</p></article>
+      <article className="panel display-panel"><div className="card-heading"><h2>On your display</h2><span className="meta">128 × 32 · two panels</span></div><DisplayPreview data={data}/><p className="meta">Preview of saved settings. Hardware connection is verified on the panel.</p></article>
+    </section><aside className="panel settings-panel"><div className="card-heading"><h2>Commute settings</h2><span className="meta">{dirty?'Unsaved changes':'Your route'}</span></div>
+    {settings?<form onSubmit={save}>
+      <AddressField label="Origin" dotClass="start-dot" value={settings.origin} placeholder="Home address" onChange={v=>update('origin',v)}/>
+      <AddressField label="Destination" dotClass="end-dot" value={settings.destination} placeholder="Work, school, or an address" onChange={v=>update('destination',v)}/>
+      <label>Arrive by<input type="datetime-local" required value={arrival} onChange={e=>{setArrival(e.target.value);setDirty(true);}}/></label><p className="meta">Date and time entered in {Intl.DateTimeFormat().resolvedOptions().timeZone}. Choose the next date after each trip.</p>
+      <div className="field-pair"><label>Safety buffer <span className="meta">min</span><input type="number" min="0" max="120" required value={settings.safetyBufferMinutes} onChange={e=>update('safetyBufferMinutes',e.target.valueAsNumber)}/></label><label>Parking / walking <span className="meta">min</span><input type="number" min="0" max="120" required value={settings.parkingWalkingMinutes} onChange={e=>update('parkingWalkingMinutes',e.target.valueAsNumber)}/></label></div>
+      <fieldset><legend>Active weekdays</legend><div className="weekdays">{['S','M','T','W','T','F','S'].map((day,i)=><button key={i} type="button" className={settings.activeWeekdays.includes(i)?'selected':''} aria-label={['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][i]} aria-pressed={settings.activeWeekdays.includes(i)} onClick={()=>update('activeWeekdays',settings.activeWeekdays.includes(i)?settings.activeWeekdays.filter(d=>d!==i):[...settings.activeWeekdays,i])}>{day}</button>)}</div></fieldset>
+      <div className="field-pair"><label>Active from<input type="time" required value={settings.activeStart} onChange={e=>update('activeStart',e.target.value)}/></label><label>Until<input type="time" required value={settings.activeEnd} onChange={e=>update('activeEnd',e.target.value)}/></label></div>
+      <label>Display / schedule timezone<input required value={settings.timezone} onChange={e=>update('timezone',e.target.value)} list="timezones"/><datalist id="timezones">{['America/Los_Angeles','America/Denver','America/Chicago','America/New_York','Europe/London','UTC'].map(z=><option key={z} value={z}/>)}</datalist></label>
+      <div className="settings-divider"/><label>Display brightness <strong>{Math.round(settings.brightness*100)}%</strong><input type="range" min="5" max="100" value={Math.round(settings.brightness*100)} onChange={e=>update('brightness',Number(e.target.value)/100)}/></label>
+      <label className="toggle-label"><span>Rotate display screens<small>Departure, traffic message, and graph</small></span><input type="checkbox" checked={settings.rotateScreens} onChange={e=>update('rotateScreens',e.target.checked)}/></label>
+      <button className="save-button" disabled={busy}>{busy?'Saving / checking traffic…':'Save & calculate'}</button><p className="save-notice" role="status">{notice}</p>
+    </form>:<p>{busy?'Loading your settings…':'Connect to load your saved settings.'}</p>}</aside></div>
+    <footer><span>Leave by · Powered by TomTom</span><span>Traffic estimates can change. Allow extra time for important trips.</span></footer>
+  </main>;
 }
+function Metric({label,value}:{label:string;value:string}) {return <div><span>{label}</span><strong>{value}</strong></div>;}
