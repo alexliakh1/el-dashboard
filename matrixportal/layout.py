@@ -59,7 +59,7 @@ def render(b, data, screen, state, age_minutes=0):
             for i in range(len(coords)-1): line(b,*coords[i],*coords[i+1],color)
             # ISO UTC strings sort chronologically; highlight nearest leave sample.
             leave=rec.get('leaveBy')
-            if leave:
+            if leave and points[0]['departure'] <= leave <= points[-1]['departure']:
                 index=0
                 for i,p in enumerate(points):
                     if p['departure']<=leave:index=i
@@ -84,3 +84,4 @@ def render(b, data, screen, state, age_minutes=0):
     label=('OFFLINE '+age) if state=='CACHED/OFFLINE' else age
     if screen!=2:text(b,label,2,27,ORANGE if state=='CACHED/OFFLINE' else DIM,max_width=124)
     elif state=='CACHED/OFFLINE': b[0,29]=ORANGE;b[1,29]=ORANGE
+
