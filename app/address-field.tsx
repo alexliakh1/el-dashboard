@@ -17,10 +17,11 @@ export function AddressField({ dotClass, label, onChange, placeholder, value }: 
   const [isSearching, setIsSearching] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(
     function () {
-      const query = value.trim();
+      const query = searchQuery.trim();
       if (query.length < 3) {
         const reset = window.setTimeout(() => {
           setSuggestions([]); setIsOpen(false); setIsSearching(false);
@@ -61,11 +62,12 @@ export function AddressField({ dotClass, label, onChange, placeholder, value }: 
         controller.abort();
       };
     },
-    [value],
+    [searchQuery],
   );
 
   function chooseSuggestion(suggestion: AddressSuggestion) {
     onChange(suggestion.value);
+    setSearchQuery('');
     setSuggestions([]);
     setIsOpen(false);
     setActiveIndex(-1);
@@ -107,6 +109,7 @@ export function AddressField({ dotClass, label, onChange, placeholder, value }: 
           value={value}
           onChange={function (event) {
             onChange(event.target.value);
+            setSearchQuery(event.target.value);
           }}
           onFocus={function () {
             if (suggestions.length > 0) {
