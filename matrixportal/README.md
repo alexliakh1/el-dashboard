@@ -142,6 +142,12 @@ Software tests cannot establish the power budget or electrical reliability.
 · [RGBMatrix reference](https://docs.circuitpython.org/en/stable/shared-bindings/rgbmatrix/index.html)
 # Drive time and arrival display
 
+Install `brightness.py` beside `code.py`. With reduced scan bit depth, extremely
+low RGB values become black. The firmware therefore clamps brightness to the
+lowest level that keeps every foreground palette color visible (about 20% for
+the default 3-bit configuration). Slider values below that floor produce the
+same minimum visible level. No additional blinking/PWM or Wi-Fi changes are used.
+
 The dashboard's **Display screen** setting selects Drive time (default) or
 Arrival time (leave now). Each stays on screen without automatic rotation.
 ETA uses current driving duration only; parking/walking and safety allowances

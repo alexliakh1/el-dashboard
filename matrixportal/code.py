@@ -14,6 +14,7 @@ from layout import render
 from protocol import validate
 from network import request
 from clock_sync import synchronize
+from brightness import scaled_colors
 
 PANEL_WIDTH=64
 PANEL_HEIGHT=32
@@ -41,8 +42,8 @@ palette=displayio.Palette(6)
 colors=(0x000000,0xFFFFFF,0x7C9BA9,0x75EF55,0xFFE353,0xFF702F)
 def brightness(value):
     # RGBMatrix.brightness is on/off, so scale RGB channels instead.
-    for i,color in enumerate(colors):
-        palette[i]=(int((color>>16)*value)<<16)|(int(((color>>8)&255)*value)<<8)|int((color&255)*value)
+    for i,color in enumerate(scaled_colors(colors,value,BIT_DEPTH)):
+        palette[i]=color
 brightness(0.3)
 bitmaps=[displayio.Bitmap(128,32,6),displayio.Bitmap(128,32,6)]
 tiles=[displayio.TileGrid(b,pixel_shader=palette) for b in bitmaps]
