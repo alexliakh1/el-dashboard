@@ -2,7 +2,7 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'matrixportal'))
-from layout import render, text, clock_label, eta_label
+from layout import render, text, clock_label, eta_label, duration_label
 from unittest.mock import patch
 from protocol import validate
 from network import decode_response
@@ -23,6 +23,14 @@ def payload():
         predictions=[dict(departure='2026-09-09T19:00:00Z',minutes=20,time='12:00 PM'),dict(departure='2026-09-09T20:00:00Z',minutes=30,time='1:00 PM')])
 
 class FirmwareTests(unittest.TestCase):
+    def test_time_formatting_without_cpython_only_zfill(self):
+        class CircuitPythonString(str):
+            def zfill(self,*args):
+                raise AttributeError("'str' object has no attribute 'zfill'")
+        p=payload();p['display'].update(mode='eta',etaEpoch=29100,etaUtcOffsetSeconds=0)
+        with patch('layout.str',CircuitPythonString,create=True):
+            self.assertEqual(eta_label(p),'8:05 AM')
+            self.assertEqual(duration_label(125),'2h 05m')
     def test_all_screens_fit_and_remain_visible(self):
         for state in ['STARTING','CONNECTING TO WI-FI','LOADING COMMUTE','NORMAL','CACHED/OFFLINE','NO ROUTE','MISSING CONFIGURATION','SERVER ERROR']:
             for screen in range(3):

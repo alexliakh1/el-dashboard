@@ -66,10 +66,14 @@ def line(b, x0,y0,x1,y1,color):
         if e>=dy: err+=dy; x0+=sx
         if e<=dx: err+=dx; y0+=sy
 
+def two_digits(value):
+    # CircuitPython does not implement str.zfill.
+    return ('0' if value<10 else '')+str(value)
+
 def duration_label(minutes):
     minutes=max(0,int(minutes))
     if minutes<100:return str(minutes)+' min'
-    if minutes<6000:return str(minutes//60)+'h '+str(minutes%60).zfill(2)+'m'
+    if minutes<6000:return str(minutes//60)+'h '+two_digits(minutes%60)+'m'
     return str(minutes//60)+'h'
 
 def updated_label(age_minutes):
@@ -82,7 +86,7 @@ def eta_label(data,elapsed_seconds=0):
     disp=data.get('display',{})
     local=int(disp.get('etaEpoch',data['serverEpoch'])+elapsed_seconds+disp.get('etaUtcOffsetSeconds',data['utcOffsetSeconds']))
     minute=(local//60)%60;hour=(local//3600)%24
-    return str(hour%12 or 12)+':'+str(minute).zfill(2)+(' AM' if hour<12 else ' PM')
+    return str(hour%12 or 12)+':'+two_digits(minute)+(' AM' if hour<12 else ' PM')
 
 def warning(b,y):
     line(b,7,y,1,y+10,YELLOW);line(b,1,y+10,13,y+10,YELLOW);line(b,13,y+10,7,y,YELLOW)
