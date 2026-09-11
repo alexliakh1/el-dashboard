@@ -66,7 +66,29 @@ def line(b, x0,y0,x1,y1,color):
         if e>=dy: err+=dy; x0+=sx
         if e<=dx: err+=dx; y0+=sy
 
-def render(b, data, screen, state, age_minutes=0):
+def duration_label(minutes):
+    minutes=max(0,int(minutes))
+    if minutes<100:return str(minutes)+' min'
+    if minutes<6000:return str(minutes//60)+'h '+str(minutes%60).zfill(2)+'m'
+    return str(minutes//60)+'h'
+
+def updated_label(age_minutes):
+    age=max(0,int(age_minutes))
+    if age<100:return 'Updated '+str(age)+' min ago'
+    if age<1440:return 'Updated '+str(age//60)+' hr ago'
+    return 'Updated '+str(min(999,age//1440))+'d ago'
+
+def eta_label(data,elapsed_seconds=0):
+    disp=data.get('display',{})
+    local=int(disp.get('etaEpoch',data['serverEpoch'])+elapsed_seconds+disp.get('etaUtcOffsetSeconds',data['utcOffsetSeconds']))
+    minute=(local//60)%60;hour=(local//3600)%24
+    return str(hour%12 or 12)+':'+str(minute).zfill(2)+(' AM' if hour<12 else ' PM')
+
+def warning(b,y):
+    line(b,7,y,1,y+10,YELLOW);line(b,1,y+10,13,y+10,YELLOW);line(b,13,y+10,7,y,YELLOW)
+    line(b,7,y+3,7,y+6,YELLOW);b[7,y+8]=YELLOW
+
+def render(b, data, screen, state, age_minutes=0, elapsed_seconds=0):
     b.fill(BLACK)
     rec=data.get('recommendation') if data else None
     disp=data.get('display',{}) if data else {}
@@ -107,17 +129,22 @@ def render(b, data, screen, state, age_minutes=0):
             text(b,points[-1].get('time','').replace(' AM','').replace(' PM',''),98,23,DIM,max_width=30)
         else: text(b,'WAITING FOR FORECAST',2,10,DIM)
     else:
-        badge(b,2,DIM)
-        badge(b,19,GREEN,arrival=True)
-        board_text(b,'Leave by' if rec.get('feasible') else 'Leave now',17,2,max_width=65)
-        board_text(b,'Arrive',17,19,max_width=65)
-        clock_label(b,disp.get('leaveTime','NOW') if rec.get('feasible') else 'NOW',2,GREEN if rec.get('feasible') else ORANGE)
-        clock_label(b,disp.get('arriveTime','--:--'),19,GREEN)
-        text(b,str(rec.get('predictedTravelMinutes',0))+' MIN DRIVE',17,10,color,max_width=99)
-        if state=='CACHED/OFFLINE':
-            text(b,'OFFLINE '+str(min(9999,max(0,age_minutes)))+'M OLD',17,27,ORANGE,max_width=110)
+        stale=age_minutes*60>=data.get('staleAfterSeconds',420)
+        is_eta=disp.get('mode','drive')=='eta'
+        badge(b,4,DIM)
+        board_text(b,'Arrive' if is_eta else 'Drive',20,5,max_width=47)
+        value=eta_label(data,elapsed_seconds) if is_eta else duration_label(rec.get('currentTravelMinutes',0))
+        board_text(b,value,124-(len(value)*6-1),5,YELLOW if stale else GREEN,max_width=53)
+        if stale:
+            board_text(b,updated_label(age_minutes),8,22,YELLOW,max_width=116)
+        elif rec.get('trafficDelayMinutes',0)>=1:
+            warning(b,19)
+            board_text(b,'Delay',20,22,max_width=47)
+            value='+'+duration_label(rec['trafficDelayMinutes'])
+            board_text(b,value,124-(len(value)*6-1),22,YELLOW,max_width=53)
         else:
-            text(b,'ON TIME' if rec.get('feasible') else 'RUNNING LATE',17,27,DIM,max_width=110)
+            line(b,2,24,5,27,GREEN);line(b,5,27,12,20,GREEN)
+            board_text(b,'No added delay',20,22,max_width=104)
         return
     # Bottom 5-pixel strip never overlaps main time (y9..23).
     age=str(min(9999,max(0,age_minutes)))+'M OLD'

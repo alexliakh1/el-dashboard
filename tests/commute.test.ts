@@ -39,6 +39,25 @@ test('missing and malformed TomTom summaries',()=>{for(const input of [null,{}, 
 test('valid summary preserves traffic fields',()=>assert.equal(parseSummary({routes:[{summary:{travelTimeInSeconds:1200,lengthInMeters:1000,arrivalTime:s.arriveBy,departureTime:point(0,1).departure}}]}).travelTimeInSeconds,1200));
 test('settings validation and overnight active window',()=>{assert.throws(()=>validateSettings({...s,brightness:NaN}));assert.throws(()=>validateSettings({...s,rotateScreens:'yes'}));assert.equal(activeNow({...s,activeStart:'23:00',activeEnd:'02:00',activeWeekdays:[2]},Date.parse('2026-09-09T08:00:00Z')),true);});
 test('display serialization is compact, timezone aware and secret-free',()=>{const snap:Snapshot={settingsKey:settingsKey(s),current:series[0],predictions:series,updatedAt:point(0,1).departure,predictionsAt:point(0,1).departure,recommendation:recommend(s,series,series[0],now)};const result=serializeDisplay(s,snap,now);assert.equal(result.utcOffsetSeconds,-25200);assert.equal(result.display.leaveTime,'8:05 AM');assert.ok(JSON.stringify(result).length<6000);assert.ok(!JSON.stringify(result).includes('settingsKey'));assert.equal(JSON.parse(JSON.stringify(result)).status,'ok');});
+
+test('display choice survives validation and ETA uses current drive without allowances',()=>{
+  const settings=validateSettings({...s,displayMode:'eta',parkingWalkingMinutes:12,safetyBufferMinutes:15});
+  const snap:Snapshot={settingsKey:settingsKey(settings),current:series[0],predictions:series,updatedAt:point(0,1).departure,predictionsAt:point(0,1).departure,recommendation:recommend(settings,series,series[0],now)};
+  const result=serializeDisplay(settings,snap,now);
+  assert.equal(result.display.mode,'eta');
+  assert.equal(result.display.etaEpoch,Math.floor(now/1000)+Math.ceil(series[0].minutes)*60);
+  assert.equal(result.display.rotateScreens,false);
+  assert.equal(validateSettings({...s,displayMode:undefined}).displayMode,'drive');
+  assert.throws(()=>validateSettings({...s,displayMode:'invalid'}));
+});
+
+test('freshness limit follows refresh schedule and tightens near departure',()=>{
+  const snap:Snapshot={settingsKey:settingsKey(s),current:series[0],predictions:series,updatedAt:point(0,1).departure,predictionsAt:point(0,1).departure,recommendation:recommend(s,series,series[0],now)};
+  assert.equal(serializeDisplay(s,snap,now).staleAfterSeconds,420);
+  const distant={...s,activeWeekdays:[],arriveBy:point(180,1).departure};
+  assert.equal(serializeDisplay(distant,snap,now).staleAfterSeconds,3900);
+  assert.equal(serializeDisplay({...s,activeWeekdays:[],arriveBy:point(10,1).departure},snap,now).staleAfterSeconds,420);
+});
 test('database lease prevents overlapping refresh across storage instances',async()=>{const database=db(),a=new Storage(database),b=new Storage(database);const owner=await a.acquire('refresh',now);assert.ok(owner);assert.equal(await b.acquire('refresh',now),null);await a.release('refresh',owner!);assert.ok(await b.acquire('refresh',now));});
 test('service caches series/current, persists and falls back on failure',async()=>{
   const storage=new Storage(db());await storage.set('settings',s);let calls=0,fail=false;

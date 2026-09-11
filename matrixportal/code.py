@@ -53,15 +53,26 @@ last_draw=-1;last_frame=None;transfer=None;pool=None
 up=digitalio.DigitalInOut(board.BUTTON_UP);up.switch_to_input(pull=digitalio.Pull.UP)
 down=digitalio.DigitalInOut(board.BUTTON_DOWN);down.switch_to_input(pull=digitalio.Pull.UP)
 last_buttons=(False,False);button_changed=0
+
+def radio_idle():
+    global pool
+    # Requests close their sockets before this is called. Recreate the pool after
+    # reconnecting; sockets from a previous radio session must not be reused.
+    pool=None
+    wifi.radio.enabled=False
+
+radio_idle()
 def draw(now):
     global buffer_index,last_draw,last_frame
     age=int((data.get('ageSeconds',0)+now-received)/60) if data else 0
-    effective='CACHED/OFFLINE' if data and (state=='CACHED/OFFLINE' or age>=15) else state
-    frame=(id(data),screen,effective,age)
+    elapsed=max(0,now-received) if data else 0
+    effective=state
+    eta_minute=int((data.get('display',{}).get('etaEpoch',0)+elapsed)/60) if data else 0
+    frame=(id(data),screen,effective,age,eta_minute)
     last_draw=now
     if frame==last_frame:return
     buffer_index=1-buffer_index
-    render(bitmaps[buffer_index],data,screen,effective,age)
+    render(bitmaps[buffer_index],data,screen,effective,age,elapsed)
     group[0]=tiles[buffer_index]
     display.refresh(minimum_frames_per_second=0)
     last_frame=frame
@@ -79,14 +90,16 @@ while True:
     if buttons!=last_buttons and now-button_changed>.15:
         if buttons==(True,True):next_fetch=0
         last_buttons=buttons;button_changed=now;last_draw=-1
-    # Keep the readable departure board visible, including during background refresh.
+    # The saved drive/ETA setting selects one steady screen; no automatic rotation.
     screen=0
     if now-last_draw>=1:draw(now)
     if configured and now>=next_fetch:
         try:
             if transfer is None:
+                wifi.radio.enabled=True
                 if not wifi.radio.connected:
-                    state='CACHED/OFFLINE' if data else 'CONNECTING TO WI-FI';draw(now)
+                    if not data:state='CONNECTING TO WI-FI'
+                    draw(now)
                     wifi.radio.connect(ssid,password,timeout=3)
                     pool=socketpool.SocketPool(wifi.radio)
                 if pool is None:pool=socketpool.SocketPool(wifi.radio)
@@ -98,6 +111,7 @@ while True:
                 candidate=validate(result)
                 # Complete and close the generator/socket before installing data.
                 transfer.close();transfer=None
+                radio_idle()
                 if candidate['status']=='no_route':
                     data=None;state='NO ROUTE'
                 elif candidate.get('recommendation'):
@@ -115,7 +129,10 @@ while True:
                 failures=0;last_draw=-1;gc.collect()
         except (OSError,ValueError,RuntimeError,KeyError,TypeError,StopIteration) as error:
             print('Commute connection failed:',type(error).__name__)
-            if transfer:transfer.close()
+            try:
+                if transfer:transfer.close()
+            finally:
+                radio_idle()
             transfer=None;failures+=1
             state='CACHED/OFFLINE' if data else 'SERVER ERROR'
             next_fetch=time.monotonic()+min(300,5*(2**min(failures,6)))

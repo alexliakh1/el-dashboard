@@ -12,6 +12,10 @@ def validate(data):
     if not number(data.get('utcOffsetSeconds'),-50400,50400):raise ValueError('Invalid timezone')
     disp=data.get('display')
     if not isinstance(disp,dict) or not number(disp.get('brightness'),0.05,1) or not isinstance(disp.get('rotateScreens'),bool):raise ValueError('Invalid display')
+    if disp.get('mode','drive') not in ('drive','eta'):raise ValueError('Invalid display mode')
+    if 'staleAfterSeconds' in data and not number(data['staleAfterSeconds'],60,86400):raise ValueError('Invalid freshness limit')
+    if disp.get('mode')=='eta':
+        if not number(disp.get('etaEpoch'),0,10000000000) or not number(disp.get('etaUtcOffsetSeconds'),-50400,50400):raise ValueError('Invalid arrival clock')
     for key in ('leaveTime','arriveTime','changeTime'):
         if not isinstance(disp.get(key),str) or len(disp[key])>12:raise ValueError('Invalid time label')
     rec=data.get('recommendation')

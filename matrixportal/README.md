@@ -44,7 +44,7 @@ Regulated 5V supply → both panels' 5V / GND power connectors
    This is separate from both the application display token and TomTom key. Leave
    it blank on a standalone server. No token is printed to the serial console.
 5. Save the dashboard's route/arrival settings and power-cycle the panel. It should
-   show Starting → Connecting to Wi-Fi → Loading commute → the departure time.
+   show Starting → Connecting to Wi-Fi → Loading commute → the selected drive/ETA screen.
 
 No downloaded font or third-party CircuitPython bundle is required: the firmware
 uses built-in `displayio`, `rgbmatrix`, `framebufferio`, `wifi`, `socketpool`, `ssl`,
@@ -68,19 +68,14 @@ Set PANEL_ROTATION to `0` or `180` if the entire assembly is upside down. Avoid
 for alternate arrangements, but a single horizontal row normally requires `0`;
 serpentine changes alternate **rows**, not individual panels in one row. If just one
 panel is upside down, correct its mounting/cabling. Verify left-to-right panel order
-with the `LEAVE BY` label and the right-hand drive-time field.
+with the `Drive` or `Arrive` label and the right-hand time field.
 
 ## Screens and controls
 
-- Main screen: 30 seconds. Two departure-board rows: Leave by and Arrive, with
-  white mixed-case labels, outlined car/flag icons, and green right-aligned times.
-  Drive duration sits below the first row; schedule status below the second.
-  Cached/offline data replaces schedule status with an orange age warning.
-- Traffic message: 10 seconds. Green improving, yellow steady, orange worsening,
-  with approximate change time.
-- Trend: 10 seconds. Sparse graph with a white mark at the departure sample.
-- With rotation off, the main recommendation stays visible.
-- **Up:** previous screen. **Down:** next screen. **Up + Down:** request newest cache.
+- The saved Display screen choice stays visible: Drive time or Arrival time.
+  The lower row shows traffic delay, or an amber age notice when an update is overdue.
+  Legacy traffic/graph renderers remain available to tests but are not cycled on hardware.
+- **Up + Down:** request newest cache. Individual buttons do not switch screens.
   Buttons use internal pull-ups and debounce. The third button along the side is
   **Reset**, not a third software input; it restarts normally. Refresh never bypasses
   the server's TomTom rate limits.
@@ -93,6 +88,12 @@ RGBMatrix's brightness property currently acts as on/off. At four-bit color dept
 very low brightness loses some color precision; verify 25–35% visually.
 
 ## Networking, time, and recovery
+
+- Wi-Fi is enabled only for a scheduled fetch, then disabled after sockets close,
+  including failed fetches. The panel keeps displaying its last result while the
+  radio rests. Each fetch creates a fresh socket pool after reconnecting. This
+  reduces the Wi-Fi activity that triggered visible artifacts on this assembly;
+  it does not guarantee elimination of artifacts during the fetch itself.
 
 - `certs/gts-root-r4.pem` is Google's public GTS Root R4 certificate, downloaded
   from https://pki.goog/repo/certs/gtsr4.pem. It enables verified HTTPS to this
@@ -125,7 +126,8 @@ very low brightness loses some color precision; verify 25–35% visually.
   persisted cache. Device RAM cache does not survive power loss; no frequent flash
   writes or CIRCUITPY filesystem remounts are needed.
 - If the deadline passes, the server asks for a new date and the firmware shows
-  No route. If leaving now misses a future deadline, the main screen says LEAVE NOW.
+  No route. The website retains the leave-by recommendation and late-arrival warning;
+  the physical display shows current drive time or ETA, not the selected deadline.
 
 ## Bench verification still required
 
@@ -138,3 +140,17 @@ Software tests cannot establish the power budget or electrical reliability.
 
 [Adafruit wiring/pinouts](https://learn.adafruit.com/adafruit-matrixportal-s3/pinouts)
 · [RGBMatrix reference](https://docs.circuitpython.org/en/stable/shared-bindings/rgbmatrix/index.html)
+# Drive time and arrival display
+
+The dashboard's **Display screen** setting selects Drive time (default) or
+Arrival time (leave now). Each stays on screen without automatic rotation.
+ETA uses current driving duration only; parking/walking and safety allowances
+remain part of the separate leave-by recommendation. The local ETA clock advances
+between network requests. Existing saved settings default to drive time.
+
+The second row shows traffic delay, or No added delay. Once traffic is overdue,
+it instead shows Updated X min ago and colors the estimate amber. The warning
+threshold is seven minutes during active hours or within 30 minutes of departure,
+and 65 minutes otherwise. These are freshness heuristics, not a claim that we know
+unobserved road conditions changed. Temporary request failures do not immediately
+replace useful traffic information with warnings. Wi-Fi idle mitigation remains.

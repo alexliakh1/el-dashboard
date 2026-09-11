@@ -2,7 +2,7 @@ import type { Settings } from '../shared/types.ts';
 export function defaults(): Settings {
   return { origin: '', destination: '', arriveBy: '', timezone: 'America/Los_Angeles',
     safetyBufferMinutes: 5, parkingWalkingMinutes: 0, activeWeekdays: [1,2,3,4,5],
-    activeStart: '06:00', activeEnd: '10:00', brightness: 0.3, rotateScreens: true };
+    activeStart: '06:00', activeEnd: '10:00', brightness: 0.3, rotateScreens: false, displayMode: 'drive' };
 }
 export function validateSettings(input: unknown): Settings {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Enter valid commute settings.');
@@ -19,7 +19,8 @@ export function validateSettings(input: unknown): Settings {
   if (!Array.isArray(s.activeWeekdays) || s.activeWeekdays.length > 7 || !s.activeWeekdays.every(d => Number.isInteger(d) && d >= 0 && d <= 6)) throw new Error('Choose valid weekdays.');
   for (const key of ['activeStart','activeEnd'] as const) if (typeof s[key] !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(s[key])) throw new Error('Choose a valid active time window.');
   if (typeof s.brightness !== 'number' || !Number.isFinite(s.brightness) || s.brightness < 0.05 || s.brightness > 1 || typeof s.rotateScreens !== 'boolean') throw new Error('Invalid display settings.');
-  return { origin:s.origin.trim(), destination:s.destination.trim(), arriveBy:new Date(s.arriveBy).toISOString(), timezone:s.timezone,
+  if (s.displayMode !== undefined && s.displayMode !== 'drive' && s.displayMode !== 'eta') throw new Error('Choose drive time or arrival time.');
+  return { origin:s.origin.trim(), destination:s.destination.trim(), arriveBy:new Date(s.arriveBy).toISOString(), timezone:s.timezone, displayMode:s.displayMode ?? 'drive',
     safetyBufferMinutes:s.safetyBufferMinutes, parkingWalkingMinutes:s.parkingWalkingMinutes,
     activeWeekdays:[...new Set(s.activeWeekdays)], activeStart:s.activeStart, activeEnd:s.activeEnd, brightness:s.brightness, rotateScreens:s.rotateScreens };
 }

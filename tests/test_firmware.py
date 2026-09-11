@@ -2,7 +2,8 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'matrixportal'))
-from layout import render, text, clock_label
+from layout import render, text, clock_label, eta_label
+from unittest.mock import patch
 from protocol import validate
 from network import decode_response
 import json
@@ -43,7 +44,31 @@ class FirmwareTests(unittest.TestCase):
         for bad in [None,{},dict(status='ok'),dict(payload(),predictions=[None]),dict(payload(),display={})]:
             with self.assertRaises(ValueError):validate(bad)
         self.assertEqual(old['display']['leaveTime'],'12:59 PM')
-        b=Bitmap();render(b,old,0,'CACHED/OFFLINE',12);self.assertIn(5,b.pixels.values())
+        b=Bitmap();render(b,old,0,'CACHED/OFFLINE',12);self.assertIn(4,b.pixels.values())
+    def test_freshness_warning_boundary_and_current_drive(self):
+        p=payload();p['staleAfterSeconds']=420
+        p['recommendation']['currentTravelMinutes']=28
+        with patch('layout.board_text') as draw:
+            render(Bitmap(),p,0,'CACHED/OFFLINE',6)
+            labels=[c.args[1] for c in draw.call_args_list]
+            self.assertIn('28 min',labels)
+            self.assertIn('Delay',labels)
+            self.assertFalse(any('Updated' in v for v in labels))
+        with patch('layout.board_text') as draw:
+            render(Bitmap(),p,0,'NORMAL',7)
+            labels=[c.args[1] for c in draw.call_args_list]
+            self.assertIn('Updated 7 min ago',labels)
+            self.assertNotIn('Delay',labels)
+    def test_eta_advances_through_midnight_without_a_fetch(self):
+        p=payload();p['display'].update(mode='eta',etaEpoch=86340,etaUtcOffsetSeconds=0)
+        self.assertEqual(eta_label(p),'11:59 PM')
+        self.assertEqual(eta_label(p,60),'12:00 AM')
+        validate(p)
+        for age in (0,7,12,99,100,1500,99999):
+            b=Bitmap();render(b,p,0,'NORMAL',age,60)
+            self.assertLessEqual(max(x for x,y in b.pixels),123)
+        p['display']['mode']='unknown'
+        with self.assertRaises(ValueError):validate(p)
     def test_http_chunked_and_length(self):
         body=json.dumps(payload()).encode()
         raw=b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: '+str(len(body)).encode()+b'\r\n\r\n'+body

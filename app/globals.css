@@ -439,3 +439,4 @@ footer span:first-child { color: var(--ink); font-weight: 900; }
 @media(max-width:880px){.dashboard-grid{grid-template-columns:1fr}.dashboard{width:calc(100% - 32px)}.settings-panel{grid-row:2}.page-heading{align-items:start}.page-heading .secondary{white-space:normal}}
 @media(max-width:480px){.panel,.recommendation-card{padding:20px}.page-heading{flex-direction:column}.metric-grid{gap:8px}.metric-grid strong{font-size:1.1rem}.field-pair{grid-template-columns:1fr}.dashboard footer{flex-direction:column}.departure-time{font-size:48px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+.settings-panel select{width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:white;color:var(--navy);font:inherit}
